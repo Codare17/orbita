@@ -4,19 +4,33 @@
 (function () {
   'use strict';
 
-  const CONSOLE_HOOK = '<script>(function(){' +
-    'var fmt=function(a){return Array.prototype.map.call(a,function(x){try{return typeof x==="string"?x:JSON.stringify(x)}catch(e){return String(x)}}).join(" ")};' +
-    'var send=function(l,a){try{parent.postMessage({__orbita:"console",level:l,text:fmt(a)},"*")}catch(e){}};' +
-    'window.__logs=[];' +
-    '["log","info","warn","error"].forEach(function(l){var o=console[l];console[l]=function(){window.__logs.push({level:l,args:[].slice.call(arguments)});send(l,arguments);return o.apply(console,arguments)}});' +
-    'window.addEventListener("error",function(e){send("error",[e.message])});' +
+  // Перехват console.* и ошибок. offset — сколько строк служебной обёртки стоит перед кодом студента,
+  // чтобы номер строки в сообщении об ошибке совпадал с номером в редакторе.
+  const hook = offset => '<script>(function(){' +
+    'var one=function(x){if(typeof x==="string")return x;if(x===undefined)return "undefined";if(typeof x==="function")return "ƒ "+(x.name||"функция");try{return JSON.stringify(x)}catch(e){return String(x)}};' +
+    'window.__fmt=function(a){return Array.prototype.map.call(a,one).join(" ")};' +
+    'var send=function(l,t,line){try{parent.postMessage({__orbita:"console",level:l,text:t,line:line||0},"*")}catch(e){}};' +
+    'window.__logs=[];window.__errors=[];' +
+    '["log","info","warn","error"].forEach(function(l){var o=console[l];console[l]=function(){window.__logs.push({level:l,args:[].slice.call(arguments)});send(l,window.__fmt(arguments));return o.apply(console,arguments)}});' +
+    'var err=function(msg,line){line=line>' + offset + '?line-' + offset + ':0;window.__errors.push({msg:msg,line:line});send("error",msg,line)};' +
+    'window.addEventListener("error",function(e){err(e.message,e.lineno)});' +
+    'window.addEventListener("unhandledrejection",function(e){err("Promise: "+(e.reason&&e.reason.message||e.reason),0)});' +
     '})();<\/script>';
 
   const HELPERS = 'var H={' +
     'labeled:function(el){return !!(el&&el.labels&&[].some.call(el.labels,function(l){return l.textContent.trim().length>0}))},' +
     'text:function(el){return el?el.textContent.replace(/\\s+/g," ").trim():""},' +
     'css:function(el,p){return el?getComputedStyle(el).getPropertyValue(p).trim():""},' +
-    'logs:function(){return (window.__logs||[]).map(function(x){return x.args.join(" ")})},' +
+    'logs:function(){return (window.__logs||[]).map(function(x){return window.__fmt(x.args)})},' +
+    // Значение глобальной переменной или функции студента (в том числе объявленной через let/const).
+    'get:function(name){try{return (0,eval)(name)}catch(e){return undefined}},' +
+    'has:function(name){try{return (0,eval)("typeof "+name)!=="undefined"}catch(e){return false}},' +
+    // Текст кода студента (все <script>, кроме служебных).
+    'src:function(){return [].map.call(document.scripts,function(s){return s.textContent}).filter(function(t){return t.indexOf("__orbita")<0&&t.indexOf("__fmt")<0}).join("\\n")},' +
+    'eq:function(a,b){return JSON.stringify(a)===JSON.stringify(b)},' +
+    // Ожидаемые строки есть в консоли в этом порядке (между ними могут быть другие). Иначе — сообщение, какой не хватает.
+    'inOrder:function(exp){var L=H.logs().map(function(s){return String(s).trim()}),i=0;for(var k=0;k<L.length&&i<exp.length;k++)if(L[k]===String(exp[i]))i++;' +
+      'return i===exp.length?true:"В консоли не нашли строку «"+exp[i]+"»"+(i?" после «"+exp[i-1]+"»":"")},' +
     // Все CSS-правила страницы: [{ sel, style, media }], включая правила внутри @media.
     'rules:function(){var out=[];function walk(list,media){for(var i=0;i<list.length;i++){var r=list[i];' +
       'if(r.selectorText)out.push({sel:r.selectorText,style:r.style,media:media||""});' +
@@ -43,8 +57,10 @@
     return code;
   }
 
+  const prepare = (code, lang) => inject(toDoc(code, lang), hook(lang === 'js' ? 1 : 0));
+
   function preview(iframe, code, lang) {
-    iframe.srcdoc = inject(toDoc(code, lang), CONSOLE_HOOK);
+    iframe.srcdoc = prepare(code, lang);
   }
 
   // vars — индивидуальный вариант задания, в проверках доступен как H.v.
@@ -56,7 +72,7 @@
       const harness = '<script>(function(){' + HELPERS + 'H.v=' + v + ';' +
         'var T=[' + list + '];' +
         'function go(){(async function(){var out=[];for(var i=0;i<T.length;i++){try{var r=await T[i].fn(document,window,H);out.push({ok:r===true,msg:typeof r==="string"?r:""})}catch(e){out.push({ok:false,msg:"Проверка упала: "+(e&&e.message||e)})}}' +
-        'parent.postMessage({__orbita:"test",id:"' + id + '",results:out},"*")})()}' +
+        'parent.postMessage({__orbita:"test",id:"' + id + '",results:out,errors:window.__errors||[]},"*")})()}' +
         'if(document.readyState==="complete")setTimeout(go,30);else addEventListener("load",function(){setTimeout(go,30)});' +
         '})();<\/script>';
 
@@ -72,17 +88,19 @@
 
       function onMsg(e) {
         if (e.source !== f.contentWindow || !e.data || e.data.__orbita !== 'test' || e.data.id !== id) return;
-        finish(e.data.results);
+        finish(e.data.results, e.data.errors);
       }
-      function finish(results) {
+      // Результат — массив { ok, msg } по проверкам; в свойстве errors — ошибки в коде студента { msg, line }.
+      function finish(results, errors) {
         clearTimeout(timer);
         window.removeEventListener('message', onMsg);
         f.remove();
+        results.errors = errors || [];
         resolve(results);
       }
       window.addEventListener('message', onMsg);
       document.body.appendChild(f);
-      f.srcdoc = inject(toDoc(code, lang), CONSOLE_HOOK) + harness;
+      f.srcdoc = prepare(code, lang) + harness;
     });
   }
 

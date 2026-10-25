@@ -573,12 +573,12 @@
         '<div class="ws-tabs" role="tablist" aria-label="Панели тренажёра">' +
           '<button role="tab" data-tab="task" aria-selected="true">Задание</button>' +
           '<button role="tab" data-tab="code" aria-selected="false">Код</button>' +
-          '<button role="tab" data-tab="view" aria-selected="false">Результат</button>' +
+          '<button role="tab" data-tab="view" aria-selected="false" id="ws-vtab">Результат</button>' +
         '</div>' +
         '<div class="ws-grid">' +
           '<section class="pane pane-task" id="pane-task" aria-label="Задание"></section>' +
           '<section class="pane pane-code" aria-label="Код">' +
-            '<div class="pane-h"><span class="grow">index.html</span>' +
+            '<div class="pane-h"><span class="grow" id="ws-fname">index.html</span>' +
               '<label class="btn small ghost" title="Загрузить файл из VS Code">' + ico('upload') + '<span class="desk-only">Загрузить файл</span><input type="file" id="ws-file" accept=".html,.htm,.css,.js,.txt" class="sr"></label>' +
               '<button class="btn small ghost" id="ws-reset" title="Вернуть исходный код">' + ico('reset') + '</button>' +
               '<button class="btn small primary mobile-only" id="ws-check-m">Проверить</button>' +
@@ -586,7 +586,7 @@
             '<div class="editor-host" id="ws-editor"></div>' +
           '</section>' +
           '<section class="pane pane-view" aria-label="Результат">' +
-            '<div class="pane-h"><span class="grow">Результат</span><button class="btn small ghost" id="ws-run" title="Перезапустить">' + ico('play') + '</button></div>' +
+            '<div class="pane-h"><span class="grow" id="ws-vtitle">Результат</span><button class="btn small ghost" id="ws-run" title="Запустить код">' + ico('play') + '<span class="js-only">Запустить</span></button></div>' +
             '<iframe class="preview" id="ws-preview" sandbox="allow-scripts" title="Результат вашего кода"></iframe>' +
             '<div class="console" id="ws-console" hidden aria-label="Консоль"></div>' +
           '</section>' +
@@ -601,22 +601,40 @@
       id: 'ws-code', lang: tasks[ti].lang, value: codeFor(ti),
       onChange(v) {
         S.saveTask(lid, tasks[ti].id, { code: v });
+        // HTML обновляется на лету, JavaScript запускается кнопкой: незаконченный цикл не должен запускаться сам.
+        if (tasks[ti].lang === 'js') return;
         clearTimeout(previewTimer);
         previewTimer = setTimeout(runPreview, 450);
       }
     });
     teardown.push(() => clearTimeout(previewTimer));
 
-    function runPreview() {
-      consoleEl.innerHTML = ''; consoleEl.hidden = true;
-      R.preview(preview, editor.value, tasks[ti].lang);
+    const isJs = () => tasks[ti].lang === 'js';
+    function applyLang() {
+      ws.classList.toggle('js-mode', isJs());
+      document.getElementById('ws-fname').textContent = isJs() ? 'script.js' : 'index.html';
+      document.getElementById('ws-vtitle').textContent = isJs() ? 'Консоль' : 'Результат';
+      document.getElementById('ws-vtab').textContent = isJs() ? 'Консоль' : 'Результат';
     }
+    let emptyTimer = null;
+    function runPreview() {
+      clearTimeout(emptyTimer);
+      consoleEl.innerHTML = '';
+      consoleEl.hidden = !isJs();
+      R.preview(preview, editor.value, tasks[ti].lang);
+      if (isJs()) emptyTimer = setTimeout(() => {
+        if (!consoleEl.childElementCount) consoleEl.innerHTML = '<div class="c-muted">Код выполнен, вывода нет. Чтобы увидеть значение, используйте console.log(…).</div>';
+      }, 800);
+    }
+    teardown.push(() => clearTimeout(emptyTimer));
     onMessage(e => {
       if (e.source !== preview.contentWindow || !e.data || e.data.__orbita !== 'console') return;
       consoleEl.hidden = false;
+      const muted = consoleEl.querySelector('.c-muted');
+      if (muted) muted.remove();
       const line = document.createElement('div');
       line.className = 'c-' + e.data.level;
-      line.textContent = (e.data.level === 'error' ? '✖ ' : '› ') + e.data.text;
+      line.textContent = (e.data.level === 'error' ? '✖ ' + (e.data.line ? 'строка ' + e.data.line + ': ' : '') : '› ') + e.data.text;
       consoleEl.appendChild(line);
     });
 
@@ -650,6 +668,8 @@
         (st.passed ? '<div class="pass-box"><b>Задание выполнено' + (st.points ? ': +' + st.points + ' б.' : '') + '</b>' +
           (st.solution ? '<span class="muted">Решение было открыто, поэтому баллы за задание не начислены.</span>' : '') +
           (ti < tasks.length - 1 ? '<button class="btn ok" id="ws-next">Следующее задание →</button>' : '<button class="btn ok" id="ws-done">Сдать ПЗ</button>') + '</div>' : '') +
+        (res && res.errors && res.errors.length
+          ? '<div class="code-err"><b>В коде ошибка' + (res.errors[0].line ? ' в строке ' + res.errors[0].line : '') + '</b><code>' + esc(res.errors[0].msg) + '</code></div>' : '') +
         '<div class="checks"><h3>Автопроверка</h3><ul>' +
           t.tests.map((x, i) => {
             const r = res && res[i];
@@ -692,6 +712,7 @@
       if (i < 0 || i >= tasks.length) return;
       ti = i; results = null; solArmed = false;
       editor.setLang(tasks[i].lang);
+      applyLang();
       editor.value = codeFor(i);
       runPreview(); drawScore(); drawTask();
       setTab('task');
@@ -785,7 +806,7 @@
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); runCheck(); }
     });
 
-    runPreview(); drawScore(); drawTask();
+    applyLang(); runPreview(); drawScore(); drawTask();
   }
 
   /* ---------- отчёт преподавателя ---------- */
