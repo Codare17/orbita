@@ -437,6 +437,10 @@
     const queue = L.steps.map((s, i) => Object.assign({ _i: i }, s));
     const firstTry = {};
     let pos = 0, xp = 0, ui = null, mode = 'next';
+    // «Назад»: пройденные шаги сохраняются снимком и показываются только для просмотра — ответ не изменить, XP не набрать повторно.
+    // frontier — самый дальний шаг, до которого дошёл студент.
+    let frontier = 0;
+    const seen = [];
     const started = Date.now();
     S.saveResult(it.id, { started: true, kind: 'theory' });
 
@@ -448,15 +452,19 @@
           '<span class="chip xp">' + ico('bolt') + '<span id="pl-xp">0</span></span>' +
         '</div></header>' +
         '<main class="pl-stage"><div class="pl-step" id="pl-step"></div></main>' +
-        '<footer class="pl-foot" id="pl-foot"><div class="pl-foot-in"><div class="pl-fb" id="pl-fb" aria-live="polite"></div>' +
+        '<footer class="pl-foot" id="pl-foot"><div class="pl-foot-in">' +
+          '<button class="btn big ghost pl-back" id="pl-back" aria-label="Предыдущий шаг">' + ico('back') + '<span>Назад</span></button>' +
+          '<div class="pl-fb" id="pl-fb" aria-live="polite"></div>' +
           '<button class="btn primary big pl-main" id="pl-main">Далее</button></div></footer>' +
       '</div>';
     const stepEl = document.getElementById('pl-step'), foot = document.getElementById('pl-foot');
     const fb = document.getElementById('pl-fb'), main = document.getElementById('pl-main');
     const bar = app.querySelector('.pl-bar i');
+    const backBtn = document.getElementById('pl-back');
 
     function setFoot(m, ok, text) {
       mode = m;
+      backBtn.disabled = pos === 0;
       foot.className = 'pl-foot' + (m === 'result' ? (ok ? ' ok' : ' bad') : '');
       main.className = 'btn big pl-main ' + (m === 'result' ? (ok ? 'ok' : 'bad') : 'primary');
       if (m === 'next') { fb.innerHTML = ''; main.textContent = pos === queue.length - 1 ? 'Завершить' : 'Далее'; main.disabled = false; }
@@ -485,10 +493,38 @@
       else setFoot('result', false, '<b>Не совсем</b><span>Правильно: ' + esc(ui.answer()) + '</span>' + extra + '<span>Вернёмся к этому вопросу в конце урока.</span>');
     }
 
+    const snapshot = () => ({ html: stepEl.innerHTML, fb: fb.innerHTML, cls: foot.className });
+
+    function review(i) {
+      const s = seen[i];
+      mode = 'review';
+      bar.style.width = (i / queue.length * 100) + '%';
+      stepEl.innerHTML = s.html;
+      foot.className = s.cls;
+      fb.innerHTML = s.fb;
+      main.className = 'btn big pl-main ' + (/ ok/.test(s.cls) ? 'ok' : / bad/.test(s.cls) ? 'bad' : 'primary');
+      main.textContent = 'Далее';
+      main.disabled = false;
+      backBtn.disabled = i === 0;
+      window.scrollTo(0, 0);
+    }
+
     function advance() {
+      if (pos === frontier && mode !== 'check') seen[pos] = snapshot();
       pos++;
-      if (pos >= queue.length) return finish();
-      show();
+      if (pos > frontier) {
+        frontier = pos;
+        if (pos >= queue.length) return finish();
+        return show();
+      }
+      if (seen[pos]) review(pos); else show();
+    }
+
+    function back() {
+      if (pos === 0) return;
+      if (pos === frontier && mode !== 'check' && mode !== 'review') seen[pos] = snapshot();
+      pos--;
+      review(pos);
     }
 
     function finish() {
@@ -521,15 +557,17 @@
     }
 
     main.addEventListener('click', () => {
-      if (mode === 'next') advance();
-      else if (mode === 'check') { if (ui.ready()) check(); }
+      if (mode === 'check') { if (ui.ready()) check(); }
       else advance();
     });
+    backBtn.addEventListener('click', back);
     document.getElementById('pl-exit').addEventListener('click', () => go('course', { course: it.course.id }));
     onKey(e => {
       if (e.target.closest('input, textarea, select')) return;
       if (e.key === 'Enter' && !e.target.closest('button:not(#pl-main)')) { e.preventDefault(); main.click(); }
       else if (/^[1-9]$/.test(e.key) && mode === 'check' && ui.key) ui.key(e.key);
+      else if (e.key === 'ArrowLeft') back();
+      else if (e.key === 'ArrowRight' && mode !== 'check') main.click();
       else if (e.key === 'Escape') go('course', { course: it.course.id });
     });
     show();

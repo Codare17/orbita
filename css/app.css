@@ -220,7 +220,13 @@ kbd { font: 12px var(--f-mono); padding: 1px 5px; border-radius: 5px; border: 1p
 .pl-foot.bad .pl-fb b { color: var(--bad); }
 .pl-fb span { font-size: 15px; color: var(--fg-2); }
 .pl-main { margin-left: auto; min-width: 200px; }
-@media (max-width: 600px) { .pl-main { width: 100%; } }
+.pl-back { flex: none; padding: 0 16px; color: var(--fg-2); }
+.pl-back[disabled] { visibility: hidden; }
+@media (max-width: 600px) {
+  .pl-fb { flex-basis: 100%; order: -1; }
+  .pl-main { flex: 1; min-width: 0; }
+  .pl-back span { display: none; }
+}
 
 .prose { max-width: 65ch; display: flex; flex-direction: column; gap: 10px; font-size: 17px; }
 .prose ul, .prose ol { margin: 0; padding-left: 1.3em; display: flex; flex-direction: column; gap: 6px; }
