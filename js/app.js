@@ -99,15 +99,16 @@
 
   function practiceScore(lid) {
     const L = O.lessons[lid];
-    let score = 0, max = 0, passed = 0, clean = true;
+    let score = 0, max = 0, passed = 0, clean = true, activeMs = 0;
     L.tasks.forEach(t => {
       const st = S.task(lid, t.id);
       max += t.points;
+      activeMs += st.activeMs || 0;
       if (st.passed) { score += st.points || 0; passed++; }
       if (st.hint || st.solution) clean = false;
     });
     const pct = max ? Math.round(score / max * 100) : 0;
-    return { score, max, pct, mark: markFor(pct), passed, total: L.tasks.length, clean: clean && passed === L.tasks.length };
+    return { score, max, pct, mark: markFor(pct), passed, total: L.tasks.length, clean: clean && passed === L.tasks.length, activeMs };
   }
 
   /* ---------- навигация ---------- */
@@ -579,7 +580,7 @@
     const tasks = L.tasks;
     let ti = state.task != null ? state.task : Math.max(0, tasks.findIndex(t => !S.task(lid, t.id).passed));
     let results = null, busy = false, previewTimer = null, solArmed = false;
-    S.saveResult(lid, { started: true, kind: 'practice' });
+    S.saveResult(lid, { started: true, kind: 'practice', startedAt: (S.result(lid) || {}).startedAt || new Date().toISOString() });
 
     const starterFor = i => {
       const t = tasks[i];
@@ -665,6 +666,37 @@
       }, 800);
     }
     teardown.push(() => clearTimeout(emptyTimer));
+
+    // Учёт работы над заданием — для преподавателя: активное время (вкладка открыта и студент что-то делал
+    // в последние 90 секунд), набранные руками и вставленные символы, загруженные файлы, число проверок.
+    const ACTIVE_WINDOW = 90000, TICK = 5000;
+    let lastAct = Date.now(), pending = {};
+    const bump = (field, n) => {
+      const id = tasks[ti].id, p = pending[id] || (pending[id] = {});
+      p[field] = (p[field] || 0) + n;
+    };
+    function flushStats() {
+      const ids = Object.keys(pending);
+      if (!ids.length || !S.user()) { pending = {}; return; }
+      ids.forEach(id => {
+        const st = S.task(lid, id), p = pending[id], patch = {};
+        Object.keys(p).forEach(k => { patch[k] = (st[k] || 0) + p[k]; });
+        S.saveTask(lid, id, patch);
+      });
+      pending = {};
+      S.saveResult(lid, { activeMs: practiceScore(lid).activeMs });
+    }
+    ['keydown', 'pointerdown', 'input', 'wheel', 'touchstart'].forEach(ev => ws.addEventListener(ev, () => { lastAct = Date.now(); }, { passive: true }));
+    const tickTimer = setInterval(() => {
+      if (document.visibilityState === 'visible' && Date.now() - lastAct < ACTIVE_WINDOW) bump('activeMs', TICK);
+    }, TICK);
+    const flushTimer = setInterval(flushStats, 30000);
+    teardown.push(() => { clearInterval(tickTimer); clearInterval(flushTimer); flushStats(); });
+    editor.el.addEventListener('paste', e => bump('pasted', ((e.clipboardData && e.clipboardData.getData('text')) || '').length));
+    editor.el.addEventListener('drop', e => bump('pasted', ((e.dataTransfer && e.dataTransfer.getData('text')) || '').length));
+    editor.el.addEventListener('input', e => {
+      if (e.inputType === 'insertText' || e.inputType === 'insertLineBreak') bump('typed', e.data ? e.data.length : 1);
+    });
     onMessage(e => {
       if (e.source !== preview.contentWindow || !e.data || e.data.__orbita !== 'console') return;
       consoleEl.hidden = false;
@@ -761,6 +793,7 @@
       if (busy) return;
       busy = true;
       const t = tasks[ti];
+      bump('checks', 1);
       const btn = document.getElementById('ws-check');
       if (btn) { btn.disabled = true; btn.textContent = 'Проверяем…'; }
       results = await R.test(editor.value, t.tests, t.lang, variantOf(t));
@@ -782,6 +815,7 @@
       } else {
         toast('Все проверки пройдены.', 'check');
       }
+      flushStats();
       drawScore(); drawTask();
       if (window.matchMedia('(max-width: 999px)').matches && !okAll) setTab('task');
     }
@@ -807,7 +841,8 @@
       back.addEventListener('click', e => { if (e.target === back) close(); });
       document.getElementById('sum-cancel').addEventListener('click', close);
       document.getElementById('sum-ok').addEventListener('click', () => {
-        S.saveResult(lid, { done: true, kind: 'practice', score: s.score, max: s.max, pct: s.pct, mark: s.mark, clean: s.clean, finishedAt: new Date().toISOString() });
+        flushStats();
+        S.saveResult(lid, { done: true, kind: 'practice', score: s.score, max: s.max, pct: s.pct, mark: s.mark, clean: s.clean, activeMs: practiceScore(lid).activeMs, finishedAt: new Date().toISOString() });
         S.addXP(10);
         const fresh = checkAchievements();
         close();
@@ -833,6 +868,7 @@
       const rd = new FileReader();
       rd.onload = () => {
         editor.value = String(rd.result);
+        bump('uploaded', editor.value.length);
         S.saveTask(lid, tasks[ti].id, { code: editor.value });
         runPreview();
         toast('Файл «' + esc(f.name) + '» загружен. Нажмите «Проверить».', 'upload');
@@ -896,6 +932,28 @@
     });
     return out.sort((x, y) => y.s - x.s);
   }
+  // Как выполнялось ПЗ: активное время, набрано и вставлено символов, загрузки, проверки.
+  // Пороги те же, что в скрипте таблицы (apps-script/Code.gs): ПЗ на 4–5 быстрее 15 минут, вставлено больше, чем набрано (от 80 символов).
+  const FAST_PZ_MIN = 15, PASTE_MIN = 80;
+  const mins = ms => ms >= 60000 ? Math.round(ms / 60000) + ' мин' : ms > 0 ? '<1 мин' : '—';
+  function workOf(p, lid) {
+    const L = O.lessons[lid], w = { active: 0, typed: 0, pasted: 0, uploaded: 0, checks: 0, tracked: false, flags: [] };
+    if (!L || !L.tasks) return w;
+    L.tasks.forEach((t, i) => {
+      const st = (p.tasks || {})[lid + '/' + t.id];
+      if (!st) return;
+      if (st.activeMs != null || st.typed != null || st.pasted != null) w.tracked = true;
+      w.active += st.activeMs || 0; w.typed += st.typed || 0; w.pasted += st.pasted || 0;
+      w.uploaded += st.uploaded || 0; w.checks += st.checks || 0;
+      if (st.passed && !st.solution && (st.pasted || 0) >= PASTE_MIN && (st.pasted || 0) > (st.typed || 0)) {
+        w.flags.push('задание ' + (i + 1) + ': вставлено ' + st.pasted + ' симв., набрано ' + (st.typed || 0) + ', ' + mins(st.activeMs || 0));
+      }
+    });
+    const r = (p.progress || {})[lid];
+    if (r && r.done && r.mark >= 4 && w.active > 0 && w.active < FAST_PZ_MIN * 60000) w.flags.unshift('сдано на «' + r.mark + '» за ' + mins(w.active) + ' активной работы');
+    return w;
+  }
+
   const fmtTime = iso => iso ? new Date(iso).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
 
   const teacherBar = () =>
@@ -970,12 +1028,19 @@
     const cell = (p, it) => {
       const x = p.progress[it.id];
       if (!x) return { html: '<span class="none">—</span>', text: '' };
-      if (x.done) return { html: markHtml(x.mark), text: x.mark ? String(x.mark) : 'н/з' };
+      const w = workOf(p, it.id);
+      const time = w.tracked ? '<small class="mins' + (w.flags.length ? ' flag' : '') + '" title="' + esc(w.flags.length ? 'Обратить внимание: ' + w.flags.join('; ') : 'Активное время') + '">' + (w.flags.length ? '⚑ ' : '') + mins(w.active) + '</small>' : '';
+      if (x.done) return { html: '<span class="rc">' + markHtml(x.mark) + time + '</span>', text: x.mark ? String(x.mark) : 'н/з' };
       const pct = x.pct != null ? x.pct : (O.lessons[it.id] && !p.example ? practiceScoreFor(p, it.id) : 0);
-      return { html: '<span class="pct" title="В работе, не сдано">' + pct + '%</span>', text: '' };
+      return { html: '<span class="rc"><span class="pct" title="В работе, не сдано">' + pct + '%</span>' + time + '</span>', text: '' };
     };
     const theoryDone = p => th.filter(i => p.progress[i.id] && p.progress[i.id].done).length;
     const pairs = similarPairs(rows.filter(p => !p.example), pz);
+    const flagged = [];
+    rows.filter(p => !p.example).forEach(p => pz.forEach(it => {
+      const w = workOf(p, it.id);
+      if (w.flags.length) flagged.push({ p, it, w, mark: (p.progress[it.id] || {}).mark });
+    }));
     const finals = pz.filter(i => O.lessons[i.id] && O.lessons[i.id].tasks.some(t => t.final)).map(i => '№' + i.num);
 
     app.innerHTML = teacherBar() +
@@ -997,6 +1062,13 @@
         '</tbody></table></div>' +
         '<p class="note">Шкала: от 85% баллов за ПЗ — «5», от 70% — «4», от 50% — «3». Подсказка снижает баллы за задание на 30%, просмотр решения — до нуля. ' +
           (S.remote ? 'Данные загружены из Google Таблицы только что; кто ещё не входил, показан прочерками.' : 'Без облака видны только студенты, занимавшиеся в этом браузере.') + '</p>' +
+        '<section><div class="section-h"><h2>Обратить внимание</h2></div>' +
+          (flagged.length
+            ? '<div class="scroll-x"><table class="rep rep-left"><thead><tr><th>Код</th><th>ПЗ</th><th>Активно</th><th>Набрано / вставлено</th><th>Проверок</th><th>Что настораживает</th></tr></thead><tbody>' +
+              flagged.map(x => '<tr><td>' + esc(x.p.code) + '</td><td>№' + x.it.num + ' ' + (x.mark !== undefined ? markHtml(x.mark) : '') + '</td><td>' + mins(x.w.active) + '</td><td>' + x.w.typed + ' / ' + x.w.pasted + (x.w.uploaded ? ' + файл ' + x.w.uploaded : '') + '</td><td>' + x.w.checks + '</td><td class="wrap-cell">' + x.w.flags.map(esc).join('<br>') + '</td></tr>').join('') +
+              '</tbody></table></div>'
+            : '<p class="muted">Подозрительных сдач нет.</p>') +
+          '<p class="note">Активное время — пока вкладка открыта и студент что-то делает; простой дольше 90 секунд не считается. Сигналы: ПЗ сдано на «4» или «5» быстрее ' + FAST_PZ_MIN + ' минут; в задании вставлено больше кода, чем набрано руками. Загрузка файла из VS Code считается отдельно и сигналом не является. Время учитывается с 26.10.2026 — у заданий, сделанных раньше, его нет. Это повод поговорить со студентом и попросить объяснить код, а не доказательство списывания.</p></section>' +
         (finals.length ? '<section><div class="section-h"><h2>Похожие решения итоговых заданий</h2></div>' +
           (pairs.length
             ? '<div class="scroll-x"><table class="rep"><thead><tr><th>Задание</th><th>Студенты</th><th>Сходство</th><th>Выполнено</th></tr></thead><tbody>' +

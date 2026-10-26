@@ -428,3 +428,10 @@ kbd { font: 12px var(--f-mono); padding: 1px 5px; border-radius: 5px; border: 1p
 @media (max-width: 999px) {
   .js-mode .console { flex: none; height: calc(100dvh - 250px); min-height: 340px; }
 }
+
+/* отчёт: время и сигналы */
+.rep .rc { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; }
+.rep .mins { font-size: 11.5px; color: var(--fg-3); white-space: nowrap; }
+.rep .mins.flag { color: var(--accent); font-weight: 600; cursor: help; }
+.rep-left td, .rep-left th { text-align: left; }
+.rep .wrap-cell { white-space: normal; min-width: 260px; line-height: 1.4; }
