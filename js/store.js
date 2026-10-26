@@ -33,6 +33,12 @@
   const today = () => day(new Date());
   const yesterday = () => day(new Date(Date.now() - 864e5));
   const keyOf = (group, code) => group + '/' + code.toUpperCase();
+  // Неделя рейтинга начинается в понедельник 00:00 по Москве. Ключ — дата понедельника; так же считает скрипт таблицы.
+  function weekKey(t) {
+    const d = new Date((t == null ? Date.now() : t) + 3 * 3600e3);
+    const monday = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - (d.getUTCDay() + 6) % 7));
+    return monday.toISOString().slice(0, 10);
+  }
 
   function profile() {
     if (!session) return null;
@@ -163,6 +169,10 @@
     addXP(n) {
       const p = profile();
       p.xp += n;
+      const w = weekKey();
+      p.xpWeek = p.xpWeek || {};
+      p.xpWeek[w] = (p.xpWeek[w] || 0) + n;
+      Object.keys(p.xpWeek).sort().slice(0, -8).forEach(k => { delete p.xpWeek[k]; });   // храним 8 недель
       const t = today();
       if (p.streak.last !== t) {
         p.streak.count = p.streak.last === yesterday() ? p.streak.count + 1 : 1;
@@ -198,6 +208,26 @@
     async solution(lessonId, taskId) {
       if (!API) return { ok: false, error: 'local' };
       try { return await call({ action: 'solution', group: session.group, code: session.code, lesson: lessonId, task: taskId }); }
+      catch (e) { return { ok: false, error: 'network' }; }
+    },
+
+    weekKey,
+
+    /* Имя для рейтинга и аватар: { name, consent, avatar }. */
+    display: () => profile().display || {},
+    setDisplay(patch) {
+      const p = profile();
+      p.display = Object.assign({}, p.display, patch);
+      persist();
+    },
+
+    /* Рейтинг своей группы: { ok, rows: [{ name, avatar, num, week, all, me }] }. Коды других студентов не приходят. */
+    async leaderboard() {
+      if (!API) {
+        const p = profile(), d = p.display || {};
+        return { ok: true, local: true, rows: [{ name: d.consent && d.name ? d.name : '', avatar: d.avatar || '', num: session.code.split('-')[0], week: (p.xpWeek || {})[weekKey()] || 0, all: p.xp, me: true }] };
+      }
+      try { return await call({ action: 'leaderboard', group: session.group, code: session.code }); }
       catch (e) { return { ok: false, error: 'network' }; }
     },
 

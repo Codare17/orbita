@@ -10,6 +10,7 @@
 
   /* ---------- иконки ---------- */
   const ICON = {
+    lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
     flame: '<path d="M12 3c1 3.5 5 5.5 5 10a5 5 0 0 1-10 0c0-2.5 1.5-4 2.5-5 .3 1.7 1.2 2.6 2.2 3 .3-2.8-.4-5.5.3-8z"/>',
     bolt: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
     check: '<path d="M5 12.5 10 17 19 7"/>',
@@ -134,6 +135,8 @@
     if (state.screen === 'teacher') return renderTeacher();
     if (!S.user()) return renderLogin();
     if (state.screen === 'course') return renderCourse();
+    if (state.screen === 'profile') return renderProfile();
+    if (state.screen === 'leaders') return renderLeaders();
     if (state.screen === 'theory') return renderTheory();
     if (state.screen === 'practice') return renderPractice();
     return renderHome();
@@ -171,11 +174,15 @@
     return '<span class="chip sync s-' + S.status() + '" title="' + s[1] + '" aria-label="' + s[1] + '">' + ico(s[0]) + '</span>';
   }
   S.onStatus(() => document.querySelectorAll('.chip.sync').forEach(el => { el.outerHTML = syncChip(); }));
-  S.onReset(lids => {
-    const names = lids.map(id => { const it = findItem(id); return it ? itemLabel(it) : id; }).join(', ');
+  S.onReset(all => {
+    const lids = all.filter(id => id !== 'name');
     if (state.screen === 'practice' && lids.includes(state.id)) go('course', { course: state.course });
-    else if (state.screen === 'home' || state.screen === 'course') render();
-    toast('<b>Преподаватель сбросил ' + esc(names) + '.</b> Результаты и XP за это занятие обнулены — его можно пройти заново.', 'reset');
+    else if (['home', 'course', 'profile', 'leaders'].includes(state.screen)) render();
+    if (lids.length) {
+      const names = lids.map(id => { const it = findItem(id); return it ? itemLabel(it) : id; }).join(', ');
+      toast('<b>Преподаватель сбросил ' + esc(names) + '.</b> Результаты и XP за это занятие обнулены — его можно пройти заново.', 'reset');
+    }
+    if (all.includes('name')) toast('<b>Преподаватель скрыл ваше имя в рейтинге.</b> Сейчас вы там «Студент №…». Новое имя можно указать в профиле.', 'reset');
   });
 
   ['pointerdown', 'keydown'].forEach(ev => document.addEventListener(ev, () => S.touch(), { passive: true }));
@@ -238,6 +245,7 @@
       '<div class="tb-stats">' +
         '<span class="chip streak' + (streak ? ' on' : '') + '" title="Дней подряд">' + ico('flame') + streak + '</span>' +
         '<span class="chip xp" title="Очки опыта">' + ico('bolt') + p.xp + ' XP</span>' + syncChip() +
+        '<button class="av-btn" data-act="profile" title="Мой профиль" aria-label="Мой профиль">' + AV.svg(avatarOf(p, u.code), 34) + '</button>' +
         '<button class="chip user" data-act="logout" title="Выйти">' + '<span class="who">' + esc(u.group) + ' · ' + esc(u.code) + '</span>' + ico('logout') + '</button>' +
       '</div></div></header>';
   }
@@ -246,6 +254,139 @@
     app.querySelectorAll('[data-act="logout"]').forEach(b => b.addEventListener('click', async () => { b.disabled = true; await S.logout(); go('login'); }));
     app.querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => openItem(b.dataset.open)));
     app.querySelectorAll('[data-course]').forEach(b => b.addEventListener('click', () => go('course', { course: b.dataset.course })));
+    app.querySelectorAll('[data-act="profile"]').forEach(b => b.addEventListener('click', () => go('profile')));
+    app.querySelectorAll('[data-act="leaders"]').forEach(b => b.addEventListener('click', () => go('leaders')));
+  }
+
+  /* ---------- профиль: имя для рейтинга и аватар ---------- */
+  const AV = window.OrbitaAvatars;
+  // Те же правила, что в скрипте таблицы: «иван петров» → «Иван П.»; цифры, символы и неприличные слова не принимаются.
+  const BAD_WORDS = /(^|[\s-])(хуй|хуе|хуё|хуя|пизд|еба|ебл|ебн|ебу|бля|сука|суки|мудак|муда|гандон|пидор|пидар|шлюх|жоп|дерьм|говн|залуп|дроч|срак|херн|нахуй)/;
+  function cleanName(raw) {
+    const parts = String(raw || '').trim().split(/\s+/).filter(Boolean);
+    if (!parts.length || !/^[A-Za-zА-Яа-яЁё-]{2,20}$/.test(parts[0])) return '';
+    if (parts[1] && !/^[A-Za-zА-Яа-яЁё]/.test(parts[1])) return '';
+    const first = parts[0].toLowerCase().replace(/(^|-)([a-zа-яё])/g, (m, a, b) => a + b.toUpperCase());
+    const name = first + (parts[1] ? ' ' + parts[1].charAt(0).toUpperCase() + '.' : '');
+    return BAD_WORDS.test(name.toLowerCase().replace(/ё/g, 'е')) ? '' : name;
+  }
+  const codeNum = code => String(code || '').split('-')[0];
+  const avatarOf = (p, code) => {
+    const a = (p.display || {}).avatar;
+    return a && AV.byId(a) && avatarOpen(AV.byId(a), p) ? a : AV.fallback(code);
+  };
+  function avatarOpen(a, p) {
+    const need = a.need;
+    if (!need) return true;
+    if (need.ach) return !!p.ach[need.ach];
+    if (need.xp) return p.xp >= need.xp;
+    if (need.fives) return Object.values(p.progress).filter(r => r.done && r.kind === 'practice' && r.mark === 5).length >= need.fives;
+    return false;
+  }
+  function avatarNeedText(a) {
+    const need = a.need;
+    if (need.ach) { const x = ACH.find(z => z.id === need.ach); return 'Достижение «' + (x ? x.title : need.ach) + '»'; }
+    if (need.xp) return 'Набрать ' + need.xp + ' XP';
+    if (need.fives) return 'Сдать ' + need.fives + ' ПЗ на «5»';
+    return '';
+  }
+
+  function renderProfile() {
+    const p = S.profile(), u = S.user(), d = S.display();
+    const current = avatarOf(p, u.code);
+    app.innerHTML = topbar() +
+      '<main class="wrap">' +
+        '<div class="course-head"><button class="back" data-act="home">' + ico('back') + 'На главную</button><h1>Мой профиль</h1></div>' +
+        '<section class="pf-head">' + AV.svg(current, 88) +
+          '<div><b class="pf-name">' + esc(d.consent && d.name ? d.name : 'Студент №' + codeNum(u.code)) + '</b>' +
+          '<span class="muted">' + esc(u.group) + ' · ' + p.xp + ' XP</span></div></section>' +
+        '<section class="pf-card"><div class="section-h"><h2>Имя в рейтинге группы</h2></div>' +
+          '<form id="pf-form" class="pf-form" novalidate>' +
+            '<label for="pf-name">Имя и фамилия</label>' +
+            '<input class="field" id="pf-name" maxlength="40" autocomplete="off" placeholder="Например, Иван Петров" value="' + esc(d.name || '') + '">' +
+            '<p class="note" id="pf-preview"></p>' +
+            '<label class="pf-consent"><input type="checkbox" id="pf-consent"' + (d.consent ? ' checked' : '') + '> <span>Разрешаю показывать моё имя в формате «Имя Ф.» одногруппникам в рейтинге. Без галочки я буду в рейтинге «Студентом №' + esc(codeNum(u.code)) + '».</span></label>' +
+            '<div class="form-err" id="pf-err" aria-live="polite"></div>' +
+            '<button class="btn primary" type="submit">Сохранить</button>' +
+          '</form>' +
+          '<p class="note">Фамилия всегда сокращается до первой буквы. Имя видят только студенты вашей группы, преподаватель может скрыть его.</p>' +
+        '</section>' +
+        '<section><div class="section-h"><h2>Аватар</h2><span class="muted">' + AV.list.filter(a => avatarOpen(a, p)).length + ' из ' + AV.list.length + ' открыто</span></div>' +
+          '<div class="av-grid">' + AV.list.map(a => {
+            const open = avatarOpen(a, p);
+            return '<button class="av-pick' + (a.id === current ? ' cur' : '') + (open ? '' : ' locked') + '" data-av="' + a.id + '"' + (open ? '' : ' disabled') +
+              ' aria-label="' + esc(a.title + (open ? '' : ', закрыт: ' + avatarNeedText(a))) + '"' + (a.id === current ? ' aria-pressed="true"' : '') + '>' +
+              AV.svg(a.id, 56) + (open ? '' : '<span class="av-lock">' + ico('lock') + '</span>') +
+              '<small>' + esc(open ? a.title : avatarNeedText(a)) + '</small></button>';
+          }).join('') + '</div></section>' +
+      '</main>';
+    bindCommon();
+
+    const nameEl = document.getElementById('pf-name'), prev = document.getElementById('pf-preview'), err = document.getElementById('pf-err');
+    const showPreview = () => {
+      const c = cleanName(nameEl.value);
+      prev.textContent = nameEl.value.trim() ? (c ? 'В рейтинге: ' + c : '') : '';
+    };
+    nameEl.addEventListener('input', () => { err.textContent = ''; showPreview(); });
+    showPreview();
+    document.getElementById('pf-form').addEventListener('submit', e => {
+      e.preventDefault();
+      const raw = nameEl.value.trim(), c = cleanName(raw), consent = document.getElementById('pf-consent').checked;
+      if (raw && !c) { err.textContent = 'Напишите имя и фамилию буквами, например «Иван Петров». Цифры, символы и неприличные слова не подходят.'; return; }
+      if (consent && !c) { err.textContent = 'Чтобы показываться в рейтинге по имени, впишите имя.'; return; }
+      S.setDisplay({ name: c, consent });
+      toast(consent ? 'Сохранено. В рейтинге вы — ' + esc(c) : 'Сохранено. В рейтинге вы — «Студент №' + esc(codeNum(u.code)) + '».', 'check');
+      renderProfile();
+    });
+    app.querySelectorAll('[data-av]').forEach(b => b.addEventListener('click', () => {
+      S.setDisplay({ avatar: b.dataset.av });
+      renderProfile();
+    }));
+  }
+
+  /* ---------- рейтинг группы ---------- */
+  const LB_TOP = 10;
+  function lbRows(rows, by) {
+    const list = rows.slice().sort((a, b) => b[by] - a[by] || String(a.num).localeCompare(String(b.num)));
+    let place = 0, prev = null;
+    list.forEach((r, i) => { if (r[by] !== prev) { place = i + 1; prev = r[by]; } r.place = place; });
+    const top = list.filter(r => r[by] > 0).slice(0, LB_TOP);
+    const me = list.find(r => r.me);
+    return { top, me, inTop: !!me && top.includes(me), total: list.length };
+  }
+  function lbRow(r, by) {
+    const medal = r.place <= 3 && r[by] > 0 ? ' m' + r.place : '';
+    return '<li class="lb-row' + (r.me ? ' me' : '') + '"><span class="lb-place' + medal + '">' + r.place + '</span>' +
+      AV.svg(r.avatar && AV.byId(r.avatar) ? r.avatar : AV.fallback(r.num), 36) +
+      '<span class="lb-name">' + esc(r.name || 'Студент №' + r.num) + (r.me ? ' <span class="tag accent">вы</span>' : '') + '</span>' +
+      '<span class="lb-xp">' + r[by] + ' XP</span></li>';
+  }
+
+  async function renderLeaders() {
+    const u = S.user(), by = state.by || 'week', d = S.display();
+    const token = state;
+    app.innerHTML = topbar() +
+      '<main class="wrap">' +
+        '<div class="course-head"><button class="back" data-act="home">' + ico('back') + 'На главную</button>' +
+          '<span class="eyebrow">' + esc(u.group) + '</span><h1>Рейтинг группы</h1></div>' +
+        '<div class="seg" role="tablist" aria-label="Период"><button role="tab" data-by="week" aria-selected="' + (by === 'week') + '">Эта неделя</button><button role="tab" data-by="all" aria-selected="' + (by === 'all') + '">Всё время</button></div>' +
+        '<section id="lb"><p class="muted">Загружаем рейтинг…</p></section>' +
+      '</main>';
+    bindCommon();
+    app.querySelectorAll('[data-by]').forEach(b => b.addEventListener('click', () => go('leaders', { by: b.dataset.by })));
+    const r = await S.leaderboard();
+    if (state !== token) return;
+    const box = document.getElementById('lb');
+    if (!r.ok) { box.innerHTML = '<p>Нет связи с сервером, рейтинг не загрузился.</p>'; return; }
+    const x = lbRows(r.rows, by);
+    box.innerHTML =
+      (!(d.consent && d.name) ? '<div class="lb-hint">Сейчас вы в рейтинге «Студент №' + esc(codeNum(u.code)) + '». <button class="link" data-act="profile">Указать имя и аватар</button></div>' : '') +
+      (x.top.length ? '<ol class="lb">' + x.top.map(z => lbRow(z, by)).join('') +
+        (x.me && !x.inTop ? '<li class="lb-gap" aria-hidden="true">…</li>' + lbRow(x.me, by) : '') + '</ol>'
+        : '<p class="muted">' + (by === 'week' ? 'На этой неделе ещё никто не набрал XP. Станьте первым!' : 'Пока никто не набрал XP.') + '</p>' + (x.me ? '<ol class="lb">' + lbRow(x.me, by) + '</ol>' : '')) +
+      '<p class="note">' + (by === 'week' ? 'Недельный рейтинг обнуляется в понедельник в 00:00 по Москве. ' : '') +
+        'Показаны первые ' + LB_TOP + ' мест и ваше место. Рейтинг обновляется раз в минуту.' + (r.local ? ' Без облака виден только ваш результат.' : '') + '</p>';
+    bindCommon();
   }
 
   /* ---------- главная ---------- */
@@ -271,12 +412,16 @@
 
     app.innerHTML = topbar() +
       '<main class="wrap">' +
-        '<section class="hello"><span class="eyebrow">' + esc(u.group) + ' · код ' + esc(u.code) + '</span><h1>Привет! Продолжим?</h1></section>' +
+        '<section class="hello me-row">' +
+          '<button class="av-btn big" data-act="profile" title="Мой профиль" aria-label="Мой профиль">' + AV.svg(avatarOf(p, u.code), 56) + '</button>' +
+          '<div><span class="eyebrow">' + esc(u.group) + ' · код ' + esc(u.code) + '</span>' +
+          '<h1>Привет' + (S.display().consent && S.display().name ? ', ' + esc(S.display().name.split(' ')[0]) : '') + '! Продолжим?</h1></div></section>' +
         '<section class="stats" aria-label="Мой прогресс">' +
           '<div class="stat s-xp"><b>' + ico('bolt') + p.xp + '</b><span>очков опыта</span></div>' +
           '<div class="stat s-streak"><b>' + ico('flame') + S.streak() + '</b><span>дней подряд</span></div>' +
           '<div class="stat s-ach"><b>' + ico('trophy') + achCount + '</b><span>достижений из ' + ACH.length + '</span></div>' +
         '</section>' +
+        '<section class="lb-teaser" id="lb-teaser"><div class="section-h"><h2>Рейтинг группы · эта неделя</h2><button class="link" data-act="leaders">Весь рейтинг</button></div><p class="muted">Загружаем…</p></section>' +
         '<section><div class="section-h"><h2>Мои курсы</h2></div><div style="display:flex;flex-direction:column;gap:12px">' + cards +
           '<div class="future">Здесь появятся курсы для других специальностей колледжа.</div></div></section>' +
         '<section><div class="section-h"><h2>Достижения</h2></div><div class="ach-grid">' +
@@ -284,6 +429,20 @@
         '</div></section>' +
       '</main>';
     bindCommon();
+    const token = state;
+    S.leaderboard().then(r => {
+      const box = document.getElementById('lb-teaser');
+      if (state !== token || !box) return;
+      if (!r.ok) { box.querySelector('p').textContent = 'Рейтинг сейчас недоступен.'; return; }
+      const x = lbRows(r.rows, 'week');
+      const myPlace = x.me && x.me.week > 0 ? x.me.place + ' место из ' + x.total : 'вы ещё не набрали XP на этой неделе';
+      box.querySelector('p').outerHTML = '<div class="lb-mini">' +
+        (x.top.slice(0, 3).map(z => '<span class="lb-mini-item" title="' + esc(z.name || 'Студент №' + z.num) + ': ' + z.week + ' XP">' +
+          AV.svg(z.avatar && AV.byId(z.avatar) ? z.avatar : AV.fallback(z.num), 40) + '<b class="lb-place m' + z.place + '">' + z.place + '</b></span>').join('') || '') +
+        '<span class="lb-mini-me">' + esc(myPlace) + '</span>' +
+        '<button class="btn small" data-act="leaders">Открыть</button></div>';
+      bindCommon();
+    });
   }
 
   /* ---------- карта курса ---------- */
@@ -1061,7 +1220,7 @@
         '</div>' +
         '<div class="legend"><span>' + markHtml(5) + markHtml(4) + markHtml(3) + ' сдано</span><span>' + markHtml(null) + ' сдано, меньше 50%</span><span><span class="pct">38%</span> в работе</span><span><span class="none">—</span> не начато</span></div>' +
         '<div class="scroll-x"><table class="rep"><thead><tr><th>Код</th>' + pz.map(i => '<th title="' + esc(i.title) + '">ПЗ ' + i.num + '</th>').join('') + '<th>Уроки</th><th>XP</th></tr></thead><tbody>' +
-          (rows.length ? rows.map(p => '<tr><td>' + esc(p.code) + (p.example ? '<span class="ex">пример</span>' : '') + '</td>' + pz.map(i => '<td>' + cell(p, i).html + '</td>').join('') +
+          (rows.length ? rows.map(p => '<tr><td>' + esc(p.code) + (p.example ? '<span class="ex">пример</span>' : '') + (p.display && p.display.consent && p.display.name ? '<small class="rep-name">' + esc(p.display.name) + '</small>' : '') + '</td>' + pz.map(i => '<td>' + cell(p, i).html + '</td>').join('') +
             '<td>' + theoryDone(p) + '/' + th.length + '</td><td>' + p.xp + '</td></tr>').join('')
             : '<tr><td colspan="' + (pz.length + 3) + '" style="text-align:left;padding:20px" class="muted">' +
               (S.remote ? 'Для группы ' + esc(group) + ' ещё нет кодов. Создайте их в таблице: «Орбита → Создать коды для группы…».' : 'В группе ' + esc(group) + ' пока никто не занимался на этом устройстве.') + '</td></tr>') +
