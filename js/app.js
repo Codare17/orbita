@@ -171,6 +171,12 @@
     return '<span class="chip sync s-' + S.status() + '" title="' + s[1] + '" aria-label="' + s[1] + '">' + ico(s[0]) + '</span>';
   }
   S.onStatus(() => document.querySelectorAll('.chip.sync').forEach(el => { el.outerHTML = syncChip(); }));
+  S.onReset(lids => {
+    const names = lids.map(id => { const it = findItem(id); return it ? itemLabel(it) : id; }).join(', ');
+    if (state.screen === 'practice' && lids.includes(state.id)) go('course', { course: state.course });
+    else if (state.screen === 'home' || state.screen === 'course') render();
+    toast('<b>Преподаватель сбросил ' + esc(names) + '.</b> Результаты и XP за это занятие обнулены — его можно пройти заново.', 'reset');
+  });
 
   ['pointerdown', 'keydown'].forEach(ev => document.addEventListener(ev, () => S.touch(), { passive: true }));
   setInterval(async () => {

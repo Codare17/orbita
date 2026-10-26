@@ -45,7 +45,7 @@
 
   /* ---------- связь с таблицей ---------- */
   let dirty = false, timer = null, status = API ? 'ok' : 'local';
-  const listeners = [];
+  const listeners = [], resetListeners = [];
   function setStatus(s) { status = s; listeners.forEach(f => f(s)); }
 
   async function call(body) {
@@ -73,6 +73,12 @@
     try {
       const r = await call({ action: 'save', group: session.group, code: session.code, profile: slim(profile()) });
       if (!r.ok) throw new Error(r.error);
+      if (r.reset && r.profile) {
+        // Преподаватель сбросил ПЗ: берём очищенный профиль из таблицы.
+        db.profiles[keyOf(session.group, session.code)] = r.profile;
+        persistLocal();
+        resetListeners.forEach(f => f(r.reset));
+      }
       setStatus(dirty ? 'saving' : 'ok');
     } catch (e) {
       dirty = true;
@@ -145,6 +151,8 @@
 
     status: () => status,
     onStatus(fn) { listeners.push(fn); },
+    /* Вызывается со списком сброшенных преподавателем ПЗ, например ['pz-05']. */
+    onReset(fn) { resetListeners.push(fn); },
 
     profile,
 
