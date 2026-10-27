@@ -218,16 +218,30 @@ window.ORBITA.lessons['pz-01'] = {
             }
         },
         {
+          name: "Форма одна, кнопка отправки внутри неё",
+          check: (d) => {
+              const forms = d.querySelectorAll('form').length;
+              if (forms > 1) return 'На странице ' + forms + ' тега <form>. Все поля и кнопка должны быть в одной форме: удалите лишние <form> и </form>.';
+              if (!d.querySelector('button, input[type="submit"]')) return 'Не нашли кнопку <button>.';
+              return !!d.querySelector('form button, form input[type="submit"]') || 'Кнопка стоит вне формы. Перенесите <button> внутрь, перед </form>.';
+            }
+        },
+        {
           name: "У кнопки свой цвет фона",
           check: (d, w, H) => {
-              const b = d.querySelector('form button, form input[type="submit"]');
+              const b = d.querySelector('form button, form input[type="submit"]') || d.querySelector('button, input[type="submit"]');
+              if (!b) return 'Не нашли кнопку <button>.';
               const bg = H.css(b, 'background-color');
-              return !!(b && !/^(rgba\(0, 0, 0, 0\)|rgb\(239, 239, 239\)|rgb\(240, 240, 240\)|transparent)$/.test(bg)) || 'Задайте кнопке background.';
+              return !/^(rgba\(0, 0, 0, 0\)|rgb\(239, 239, 239\)|rgb\(240, 240, 240\)|transparent)$/.test(bg) || 'Задайте кнопке background.';
             }
         },
         {
           name: "У кнопки скруглённые углы",
-          check: (d, w, H) => parseFloat(H.css(d.querySelector('form button, form input[type="submit"]'), 'border-top-left-radius')) > 0 || 'Задайте кнопке border-radius.'
+          check: (d, w, H) => {
+              const b = d.querySelector('form button, form input[type="submit"]') || d.querySelector('button, input[type="submit"]');
+              if (!b) return 'Не нашли кнопку <button>.';
+              return parseFloat(H.css(b, 'border-top-left-radius')) > 0 || 'Задайте кнопке border-radius.';
+            }
         }
       ]
     },
@@ -324,7 +338,7 @@ window.ORBITA.lessons['pz-01'] = {
         },
         {
           name: "Есть кнопка отправки",
-          check: (d) => !!d.querySelector('form button:not([type="button"]):not([type="reset"]), form input[type="submit"]') || 'Добавьте кнопку отправки.'
+          check: (d) => !!d.querySelector('form button:not([type="button"]):not([type="reset"]), form input[type="submit"]') || (d.querySelector('button, input[type="submit"]') ? 'Кнопка стоит вне формы. Перенесите её внутрь, перед </form>.' : 'Добавьте кнопку отправки.')
         },
         {
           name: "Форма оформлена и не шире 600 px",
