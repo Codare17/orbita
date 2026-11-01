@@ -52,8 +52,12 @@
       }
     }
 
+    // В Python отступ — 4 пробела, в HTML, CSS и JS — 2.
+    const unit = () => lang === 'py' ? '    ' : '  ';
+
     function opensBlock(before) {
       const t = before.replace(/[ \t]+$/, '');
+      if (lang === 'py') return /:\s*(#.*)?$/.test(t);
       if (/[{[(]$/.test(t)) return true;
       const m = /<([a-zA-Z][\w-]*)(?:"[^"]*"|'[^']*'|[^'">])*>$/.exec(t);
       return !!(m && !VOID.test(m[1]) && !t.endsWith('/>'));
@@ -62,7 +66,21 @@
     ta.addEventListener('keydown', e => {
       if (e.key === 'Tab' && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
         e.preventDefault();
-        insert('  ');
+        insert(unit());
+      } else if (e.key === 'Backspace' && ta.selectionStart === ta.selectionEnd && ta.selectionStart > 0) {
+        // В отступе Backspace удаляет целый уровень (4 или 2 пробела), чтобы было легко выйти из блока.
+        const before = ta.value.slice(0, ta.selectionStart);
+        const line = before.slice(before.lastIndexOf('\n') + 1);
+        if (/^ +$/.test(line)) {
+          const size = unit().length;
+          const remove = line.length % size || size;
+          e.preventDefault();
+          ta.setSelectionRange(ta.selectionStart - remove, ta.selectionStart);
+          if (!(document.execCommand && document.execCommand('delete'))) {
+            ta.setRangeText('', ta.selectionStart, ta.selectionEnd, 'end');
+            ta.dispatchEvent(new Event('input'));
+          }
+        }
       } else if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) {
         e.preventDefault();
         const before = ta.value.slice(0, ta.selectionStart);
@@ -70,8 +88,8 @@
         const line = before.slice(before.lastIndexOf('\n') + 1);
         const ind = /^[ \t]*/.exec(line)[0];
         if (opensBlock(before)) {
-          if (/^[ \t]*([}\])]|<\/)/.test(after)) insert('\n' + ind + '  \n' + ind, ind.length + 1);
-          else insert('\n' + ind + '  ');
+          if (lang !== 'py' && /^[ \t]*([}\])]|<\/)/.test(after)) insert('\n' + ind + unit() + '\n' + ind, ind.length + 1);
+          else insert('\n' + ind + unit());
         } else {
           insert('\n' + ind);
         }

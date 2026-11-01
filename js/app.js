@@ -2,7 +2,7 @@
 (function () {
   'use strict';
 
-  const O = window.ORBITA, S = window.OrbitaStore, HL = window.OrbitaHL, R = window.OrbitaRunner, ED = window.OrbitaEditor;
+  const O = window.ORBITA, S = window.OrbitaStore, HL = window.OrbitaHL, R = window.OrbitaRunner, ED = window.OrbitaEditor, PY = window.OrbitaPython;
   const app = document.getElementById('app');
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const plain = html => { const d = document.createElement('div'); d.innerHTML = html; return d.textContent; };
@@ -792,6 +792,7 @@
           '<section class="pane pane-view" aria-label="Результат">' +
             '<div class="pane-h"><span class="grow" id="ws-vtitle">Результат</span><button class="btn small ghost" id="ws-run" title="Запустить код">' + ico('play') + '<span class="js-only">Запустить</span></button></div>' +
             '<iframe class="preview" id="ws-preview" sandbox="allow-scripts" title="Результат вашего кода"></iframe>' +
+            '<div class="stdin-box py-only"><label for="ws-stdin">Ввод для input() — по одной строке на каждый вызов</label><textarea id="ws-stdin" rows="3" spellcheck="false"></textarea></div>' +
             '<div class="console" id="ws-console" hidden aria-label="Консоль"></div>' +
           '</section>' +
         '</div>' +
@@ -805,24 +806,54 @@
       id: 'ws-code', lang: tasks[ti].lang, value: codeFor(ti),
       onChange(v) {
         S.saveTask(lid, tasks[ti].id, { code: v });
-        // HTML обновляется на лету, JavaScript запускается кнопкой: незаконченный цикл не должен запускаться сам.
-        if (tasks[ti].lang === 'js') return;
+        // HTML обновляется на лету, JavaScript и Python запускаются кнопкой: незаконченный цикл не должен запускаться сам.
+        if (tasks[ti].lang !== 'html') return;
         clearTimeout(previewTimer);
         previewTimer = setTimeout(runPreview, 450);
       }
     });
     teardown.push(() => clearTimeout(previewTimer));
 
-    const isJs = () => tasks[ti].lang === 'js';
+    // JavaScript и Python работают с консолью вместо окна страницы.
+    const isJs = () => tasks[ti].lang !== 'html';
+    const isPy = () => tasks[ti].lang === 'py';
+    const stdinEl = document.getElementById('ws-stdin');
+    const stdinByTask = {};
+    stdinEl.addEventListener('input', () => { stdinByTask[ti] = stdinEl.value; });
     function applyLang() {
       ws.classList.toggle('js-mode', isJs());
-      document.getElementById('ws-fname').textContent = isJs() ? 'script.js' : 'index.html';
+      ws.classList.toggle('py-mode', isPy());
+      document.getElementById('ws-fname').textContent = isPy() ? 'main.py' : isJs() ? 'script.js' : 'index.html';
       document.getElementById('ws-vtitle').textContent = isJs() ? 'Консоль' : 'Результат';
       document.getElementById('ws-vtab').textContent = isJs() ? 'Консоль' : 'Результат';
+      stdinEl.value = stdinByTask[ti] != null ? stdinByTask[ti] : (tasks[ti].stdin || '');
     }
-    let emptyTimer = null;
+    let emptyTimer = null, pyRun = 0;
+    async function runPython() {
+      const my = ++pyRun, taskNow = ti;
+      consoleEl.hidden = false;
+      consoleEl.innerHTML = '<div class="c-muted">' + (PY.ready ? 'Выполняем…' : 'Загружаем Python — при первом запуске это занимает несколько секунд…') + '</div>';
+      const r = await PY.run(editor.value, { stdin: stdinEl.value, files: tasks[taskNow].files });
+      if (my !== pyRun || taskNow !== ti || !document.body.contains(consoleEl)) return;
+      consoleEl.innerHTML = '';
+      const out = (r.output || '').replace(/\n$/, '');
+      if (out) out.split('\n').forEach(line => {
+        const d = document.createElement('div');
+        d.className = 'c-log c-py';
+        d.textContent = line;
+        consoleEl.appendChild(d);
+      });
+      if (r.error) {
+        const d = document.createElement('div');
+        d.className = 'c-error';
+        d.textContent = '✖ ' + (r.error.line ? 'строка ' + r.error.line + ': ' : '') + PY.explain(r.error);
+        consoleEl.appendChild(d);
+      }
+      if (!out && !r.error) consoleEl.innerHTML = '<div class="c-muted">Программа выполнена, вывода нет. Чтобы увидеть значение, используйте print(…).</div>';
+    }
     function runPreview() {
       clearTimeout(emptyTimer);
+      if (isPy()) { runPython(); return; }
       consoleEl.innerHTML = '';
       consoleEl.hidden = !isJs();
       R.preview(preview, editor.value, tasks[ti].lang);
@@ -961,7 +992,9 @@
       bump('checks', 1);
       const btn = document.getElementById('ws-check');
       if (btn) { btn.disabled = true; btn.textContent = 'Проверяем…'; }
-      results = await R.test(editor.value, t.tests, t.lang, variantOf(t));
+      results = t.lang === 'py'
+        ? await PY.test(editor.value, t.tests, { stdin: t.stdin || '', files: t.files, vars: variantOf(t) || {} })
+        : await R.test(editor.value, t.tests, t.lang, variantOf(t));
       busy = false;
       const okAll = results.every(r => r.ok);
       const st = S.task(lid, t.id);
@@ -1159,8 +1192,10 @@
   }
 
   async function renderTeacher() {
-    const c = O.courses[0];
-    const group = state.group || c.groups[0];
+    // Группа определяет курс: КСК — ДУП.05, ИС — ДУП.02.
+    const allGroups = O.courses.flatMap(x => x.groups);
+    const group = allGroups.includes(state.group) ? state.group : allGroups[0];
+    const c = O.courses.find(x => x.groups.includes(group));
     const sem = state.sem || 1;
     const showEx = !S.remote && state.examples !== false;
     if (S.remote && !teacherPass.get()) return renderTeacherLogin();
@@ -1213,7 +1248,7 @@
         '<div class="course-head"><button class="back" id="t-back">' + ico('back') + (S.user() ? 'На главную' : 'Ко входу') + '</button>' +
           '<span class="eyebrow">' + esc(c.code) + ' · отчёт по практическим занятиям</span><h1>' + esc(c.title) + '</h1></div>' +
         '<div class="rep-tools">' +
-          '<label class="sr" for="t-group">Группа</label><select id="t-group">' + c.groups.map(g => '<option' + (g === group ? ' selected' : '') + '>' + esc(g) + '</option>').join('') + '</select>' +
+          '<label class="sr" for="t-group">Группа</label><select id="t-group">' + O.courses.map(x => '<optgroup label="' + esc(x.code) + '">' + x.groups.map(g => '<option' + (g === group ? ' selected' : '') + '>' + esc(g) + '</option>').join('') + '</optgroup>').join('') + '</select>' +
           '<div class="seg" role="tablist" aria-label="Семестр">' + c.semesters.map(s => '<button role="tab" data-sem="' + s.n + '" aria-selected="' + (s.n === sem) + '">' + esc(s.title) + '</button>').join('') + '</div>' +
           (S.remote ? '<button class="btn small" id="t-reload">' + ico('reset') + 'Обновить</button>' : '<label class="tgl"><input type="checkbox" id="t-ex"' + (showEx ? ' checked' : '') + '> Пример данных</label>') +
           '<button class="btn small primary" id="t-copy" style="margin-left:auto">' + ico('copy') + 'Копировать для Excel</button>' +

@@ -80,11 +80,35 @@
     return out + esc(src.slice(last));
   }
 
+  const PY_KW = /^(?:False|None|True|and|as|assert|async|await|break|class|continue|def|del|elif|else|except|finally|for|from|global|if|import|in|is|lambda|nonlocal|not|or|pass|raise|return|try|while|with|yield)$/;
+  const PY_BUILTIN = /^(?:print|input|int|float|str|bool|len|range|list|dict|set|tuple|sum|min|max|abs|round|sorted|enumerate|zip|open|type|isinstance|map|filter)$/;
+
+  function py(src) {
+    const re = /(#[^\n]*)|([rbfRBF]{0,2}(?:"""[\s\S]*?(?:"""|$)|'''[\s\S]*?(?:'''|$)|"(?:\\.|[^"\\\n])*"?|'(?:\\.|[^'\\\n])*'?))|(\b\d+(?:\.\d+)?\b)|([A-Za-z_Ѐ-ӿ][\wЀ-ӿ]*)/g;
+    let out = '', last = 0, m, afterDef = false;
+    while ((m = re.exec(src))) {
+      out += esc(src.slice(last, m.index));
+      if (m[1]) out += span('com', m[1]);
+      else if (m[2]) out += span('str', m[2]);
+      else if (m[3]) out += span('num', m[3]);
+      else {
+        const w = m[4];
+        if (afterDef) { out += span('fn', w); afterDef = false; }
+        else if (PY_KW.test(w)) { out += span('kw', w); afterDef = w === 'def' || w === 'class'; }
+        else if (PY_BUILTIN.test(w) || /^\s*\(/.test(src.slice(re.lastIndex))) out += span('fn', w);
+        else out += esc(w);
+      }
+      last = re.lastIndex;
+    }
+    return out + esc(src.slice(last));
+  }
+
   function auto(src, lang) {
+    if (lang === 'py') return py(src);
     if (lang === 'js') return js(src);
     if (lang === 'css') return css(src);
     return html(src);
   }
 
-  window.OrbitaHL = { html, css, js, auto, esc };
+  window.OrbitaHL = { html, css, js, py, auto, esc };
 })();
