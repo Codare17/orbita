@@ -213,6 +213,14 @@
 
     weekKey,
 
+    /* Открытка дня: { seen, day, pick, ok } — когда открытка показана и как ответили на вопрос дня. */
+    daily: () => profile().daily || {},
+    saveDaily(patch) {
+      const p = profile();
+      p.daily = Object.assign({}, p.daily, patch);
+      persist();
+    },
+
     /* Имя для рейтинга и аватар: { name, consent, avatar }. */
     display: () => profile().display || {},
     setDisplay(patch) {

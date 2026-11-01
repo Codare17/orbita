@@ -531,3 +531,31 @@ kbd { font: 12px var(--f-mono); padding: 1px 5px; border-radius: 5px; border: 1p
 .dd-list li { display: flex; gap: 8px; align-items: flex-start; color: var(--fg-2); }
 .dd-list li .ico { width: 15px; height: 15px; margin-top: 2px; flex: none; color: var(--ok); }
 .dd-list b { color: var(--fg); }
+
+/* ---------- открытка дня ---------- */
+.daily-mini { width: 100%; display: flex; align-items: center; gap: 14px; padding: 10px 16px 10px 10px; border-radius: 18px; border: 1px solid var(--line); background: var(--bg-2); text-align: left; transition: border-color .15s; }
+.daily-mini:hover { border-color: var(--accent); }
+.daily-mini > .ico { color: var(--accent); width: 24px; height: 24px; margin-left: auto; }
+.dm-art { flex: none; width: 96px; height: 56px; border-radius: 12px; overflow: hidden; }
+.dm-art svg { width: 100%; height: 100%; display: block; }
+.dm-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dm-text b { font: 500 16px/1.3 var(--f-display); }
+.dm-text small { font-size: 13.5px; color: var(--fg-2); }
+.dm-text small.wait { color: var(--accent); }
+.dm-text small.ok { color: var(--ok); }
+.modal.daily { max-width: 480px; gap: 12px; padding-top: 0; }
+.daily-head { margin: 0 -24px 6px; aspect-ratio: 320 / 140; overflow: hidden; border-radius: 22px 22px 0 0; }
+.daily-head svg { width: 100%; height: 100%; display: block; }
+.modal.daily p { color: var(--fg-2); }
+.daily-q { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 16px; background: var(--bg-3); margin-top: 4px; }
+.daily-q > b { font-size: 16.5px; line-height: 1.4; }
+.daily-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.daily-opt { padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg-2); text-align: left; line-height: 1.35; overflow-wrap: anywhere; }
+.daily-opt:not(:disabled):hover { border-color: var(--sky); }
+.daily-opt:disabled { cursor: default; opacity: .6; }
+.daily-opt.right { opacity: 1; border-color: var(--ok); background: var(--ok-soft); color: var(--ok); }
+.daily-opt.wrong { opacity: 1; border-color: var(--bad); background: var(--bad-soft); color: var(--bad); }
+.daily-res:empty { display: none; }
+.daily-res.ok { color: var(--ok) !important; font-weight: 500; }
+.daily-res.bad { color: var(--fg-2); }
+@media (max-width: 480px) { .daily-opts { grid-template-columns: 1fr; } .dm-art { width: 72px; height: 48px; } }

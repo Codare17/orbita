@@ -40,7 +40,8 @@
     table: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M9 5v14"/>',
     copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V6a2 2 0 0 1 2-2h10"/>',
     trophy: '<path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H4a3 3 0 0 0 4 4M16 6h4a3 3 0 0 1-4 4M12 13v4M8 21h8M9 17h6"/>',
-    code: '<path d="m9 8-5 4 5 4M15 8l5 4-5 4"/>'
+    code: '<path d="m9 8-5 4 5 4M15 8l5 4-5 4"/>',
+    gift: '<rect x="3" y="8" width="18" height="5" rx="1"/><path d="M5 13v8h14v-8M12 8v13M12 8c-2-4-7-4-7-1s4 1 7 1c3 0 7 2 7-1s-5-3-7 1"/>'
   };
   const ico = (n, cls) => '<svg class="ico ' + (cls || '') + '" viewBox="0 0 24 24" aria-hidden="true">' + ICON[n] + '</svg>';
   const LOGO = '<svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><ellipse cx="16" cy="16" rx="14" ry="6" transform="rotate(-25 16 16)" fill="none" stroke="#7CC7FF" stroke-width="1.6"/><circle cx="16" cy="16" r="6.5" fill="#FFB547"/><circle cx="28.7" cy="10.1" r="2.2" fill="#ECEFFA"/></svg>';
@@ -426,6 +427,7 @@
           '<div class="stat s-streak"><b>' + ico('flame') + S.streak() + '</b><span>дней подряд</span></div>' +
           '<div class="stat s-ach"><b>' + ico('trophy') + achCount + '</b><span>достижений из ' + ACH.length + '</span></div>' +
         '</section>' +
+        dailyTeaser() +
         '<section class="lb-teaser" id="lb-teaser"><div class="section-h"><h2>Рейтинг группы · эта неделя</h2><button class="link" data-act="leaders">Весь рейтинг</button></div><p class="muted">Загружаем…</p></section>' +
         '<section><div class="section-h"><h2>Мои курсы</h2></div><div style="display:flex;flex-direction:column;gap:12px">' + cards +
           '<div class="future">Здесь появятся курсы для других специальностей колледжа.</div></div></section>' +
@@ -434,6 +436,8 @@
         '</div></section>' +
       '</main>';
     bindCommon();
+    app.querySelector('[data-act="daily"]').addEventListener('click', openDaily);
+    if (S.daily().seen !== dailyCard().key) openDaily();
     const token = state;
     S.leaderboard().then(r => {
       const box = document.getElementById('lb-teaser');
@@ -448,6 +452,69 @@
         '<button class="btn small" data-act="leaders">Открыть</button></div>';
       bindCommon();
     });
+  }
+
+  /* ---------- открытка дня ---------- */
+  const DAILY_XP = 5;
+  function dailyCard() {
+    const c = O.courses.find(x => x.groups.includes(S.user().group));
+    return window.OrbitaDaily.today(c && c.id);
+  }
+  function dailyTeaser() {
+    const d = dailyCard(), st = S.daily();
+    const answered = st.day === d.key;
+    const note = !d.q ? '' : answered ? (st.ok ? 'Вопрос дня: верно, +' + DAILY_XP + ' XP' : 'Вопрос дня: ответ дан') : 'Вопрос дня ждёт: +' + DAILY_XP + ' XP';
+    return '<section class="daily-teaser"><button class="daily-mini" data-act="daily" aria-label="Открытка дня: ' + esc(d.title) + '">' +
+      '<span class="dm-art">' + window.OrbitaDaily.art(d.theme) + '</span>' +
+      '<span class="dm-text"><span class="eyebrow">' + esc(d.dateLabel) + (d.holiday ? ' · ' + esc(d.kind) : '') + '</span><b>' + esc(d.title) + '</b>' +
+      (note ? '<small class="' + (answered ? (st.ok ? 'ok' : '') : 'wait') + '">' + esc(note) + '</small>' : '') + '</span>' +
+      ico('gift') + '</button></section>';
+  }
+  function openDaily() {
+    const d = dailyCard();
+    if (S.daily().seen !== d.key) S.saveDaily({ seen: d.key });
+    const back = document.createElement('div');
+    back.className = 'modal-back';
+    back.innerHTML =
+      '<div class="modal daily" role="dialog" aria-modal="true" aria-labelledby="daily-h">' +
+        '<div class="daily-head">' + window.OrbitaDaily.art(d.theme) + '</div>' +
+        '<span class="eyebrow">' + esc(d.dateLabel) + ' · ' + esc(d.kind) + '</span>' +
+        '<h2 id="daily-h">' + esc(d.title) + '</h2>' +
+        '<p>' + esc(d.text) + '</p>' +
+        (d.q ? '<div class="daily-q"><span class="eyebrow">Вопрос дня · +' + DAILY_XP + ' XP</span><b>' + esc(d.q) + '</b>' +
+          '<div class="daily-opts">' + d.options.map((o, i) => '<button class="daily-opt" data-i="' + i + '">' + esc(o) + '</button>').join('') + '</div>' +
+          '<p class="daily-res" role="status"></p></div>' : '') +
+        '<div class="modal-actions"><button class="btn primary" id="daily-close">Закрыть</button></div>' +
+      '</div>';
+    document.body.appendChild(back);
+    const close = () => { back.remove(); if (state.screen === 'home') render(); };
+    teardown.push(() => back.remove());
+    back.addEventListener('click', e => { if (e.target === back) close(); });
+    back.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+    document.getElementById('daily-close').addEventListener('click', close);
+    if (!d.q) return document.getElementById('daily-close').focus();
+
+    const opts = [...back.querySelectorAll('.daily-opt')], res = back.querySelector('.daily-res');
+    function showAnswer(pick) {
+      opts.forEach((b, i) => {
+        b.disabled = true;
+        if (d.options[i] === d.a) b.classList.add('right');
+        else if (i === pick) b.classList.add('wrong');
+      });
+      const ok = d.options[pick] === d.a;
+      res.className = 'daily-res ' + (ok ? 'ok' : 'bad');
+      res.textContent = ok ? 'Верно! +' + DAILY_XP + ' XP' : 'Не совсем. Правильный ответ: ' + d.a + '. Завтра будет новый вопрос.';
+    }
+    const st = S.daily();
+    if (st.day === d.key) { showAnswer(d.options.indexOf(st.pick)); document.getElementById('daily-close').focus(); return; }
+    opts.forEach((b, i) => b.addEventListener('click', () => {
+      if (S.daily().day === d.key) return;
+      const ok = d.options[i] === d.a;
+      S.saveDaily({ day: d.key, pick: d.options[i], ok });
+      if (ok) S.addXP(DAILY_XP);
+      showAnswer(i);
+    }));
+    opts[0].focus();
   }
 
   /* ---------- карта курса ---------- */
