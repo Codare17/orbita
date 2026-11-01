@@ -5,6 +5,11 @@
   const O = window.ORBITA, S = window.OrbitaStore, HL = window.OrbitaHL, R = window.OrbitaRunner, ED = window.OrbitaEditor, PY = window.OrbitaPython;
   const app = document.getElementById('app');
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  // Дата в виде 2026-11-03 по часам устройства (для времени из ISO-строки — тоже по местным часам).
+  const dayOf = t => {
+    const d = t ? new Date(t) : new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  };
   const plain = html => { const d = document.createElement('div'); d.innerHTML = html; return d.textContent; };
   const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 
@@ -877,6 +882,12 @@
       ids.forEach(id => {
         const st = S.task(lid, id), p = pending[id], patch = {};
         Object.keys(p).forEach(k => { patch[k] = (st[k] || 0) + p[k]; });
+        if (p.activeMs) {
+          // Активное время ещё и по дням — для отчёта «За день».
+          const days = Object.assign({}, st.days), today = dayOf();
+          days[today] = (days[today] || 0) + p.activeMs;
+          patch.days = days;
+        }
         S.saveTask(lid, id, patch);
       });
       pending = {};
@@ -1225,6 +1236,13 @@
     if (showEx) rows = rows.concat(exampleRows(c, group).filter(e => !rows.some(p => p.code.toUpperCase() === e.code)));
     rows.sort((a, b) => a.code.localeCompare(b.code, 'ru', { numeric: true }));
 
+    const view = state.view === 'summary' ? 'summary' : 'day';
+    const viewTabs = '<div class="seg" role="tablist" aria-label="Вид отчёта">' +
+      '<button role="tab" data-view="day" aria-selected="' + (view === 'day') + '">За день</button>' +
+      '<button role="tab" data-view="summary" aria-selected="' + (view === 'summary') + '">Сводка</button></div>';
+    const groupSelect = '<label class="sr" for="t-group">Группа</label><select id="t-group">' + O.courses.map(x => '<optgroup label="' + esc(x.code) + '">' + x.groups.map(g => '<option' + (g === group ? ' selected' : '') + '>' + esc(g) + '</option>').join('') + '</optgroup>').join('') + '</select>';
+    if (view === 'day') return renderDayReport({ c, group, rows, viewTabs, groupSelect });
+
     const cell = (p, it) => {
       const x = p.progress[it.id];
       if (!x) return { html: '<span class="none">—</span>', text: '' };
@@ -1248,7 +1266,7 @@
         '<div class="course-head"><button class="back" id="t-back">' + ico('back') + (S.user() ? 'На главную' : 'Ко входу') + '</button>' +
           '<span class="eyebrow">' + esc(c.code) + ' · отчёт по практическим занятиям</span><h1>' + esc(c.title) + '</h1></div>' +
         '<div class="rep-tools">' +
-          '<label class="sr" for="t-group">Группа</label><select id="t-group">' + O.courses.map(x => '<optgroup label="' + esc(x.code) + '">' + x.groups.map(g => '<option' + (g === group ? ' selected' : '') + '>' + esc(g) + '</option>').join('') + '</optgroup>').join('') + '</select>' +
+          groupSelect + viewTabs +
           '<div class="seg" role="tablist" aria-label="Семестр">' + c.semesters.map(s => '<button role="tab" data-sem="' + s.n + '" aria-selected="' + (s.n === sem) + '">' + esc(s.title) + '</button>').join('') + '</div>' +
           (S.remote ? '<button class="btn small" id="t-reload">' + ico('reset') + 'Обновить</button>' : '<label class="tgl"><input type="checkbox" id="t-ex"' + (showEx ? ' checked' : '') + '> Пример данных</label>') +
           '<button class="btn small primary" id="t-copy" style="margin-left:auto">' + ico('copy') + 'Копировать для Excel</button>' +
@@ -1286,19 +1304,174 @@
     const rl = document.getElementById('t-reload');
     if (rl) rl.addEventListener('click', () => rerender({}));
     app.querySelectorAll('[data-sem]').forEach(b => b.addEventListener('click', () => rerender({ sem: +b.dataset.sem })));
+    app.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => rerender({ view: b.dataset.view })));
     document.getElementById('t-back').addEventListener('click', () => go('home'));
     document.getElementById('t-copy').addEventListener('click', () => {
       const head = ['Группа', 'Код'].concat(pz.map(i => 'ПЗ №' + i.num), ['Уроки', 'XP']).join('\t');
       const body = rows.filter(p => !p.example).map(p => [group, p.code].concat(pz.map(i => cell(p, i).text), [theoryDone(p) + '/' + th.length, p.xp]).join('\t')).join('\n');
-      const text = head + '\n' + body;
-      const done = () => toast('Таблица скопирована. Вставьте её в Excel через Ctrl+V.', 'copy');
-      const fallback = () => {
-        const ta = document.createElement('textarea');
-        ta.value = text; document.body.appendChild(ta); ta.select();
-        try { document.execCommand('copy'); done(); } catch (e) { toast('Не получилось скопировать: выделите таблицу мышью и нажмите Ctrl+C.', 'copy'); }
-        ta.remove();
-      };
-      try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
+      copyText(head + '\n' + body);
+    });
+  }
+
+  function copyText(text) {
+    const done = () => toast('Таблица скопирована. Вставьте её в Excel или журнал через Ctrl+V.', 'copy');
+    const fallback = () => {
+      const ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); done(); } catch (e) { toast('Не получилось скопировать: выделите таблицу мышью и нажмите Ctrl+C.', 'copy'); }
+      ta.remove();
+    };
+    try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
+  }
+
+  /* ---------- отчёт «За день» ---------- */
+  // Что каждый студент сделал в выбранный день: ПЗ и уроки, минуты, сам или нет, оценка по шкале.
+  const studentName = p => p.display && p.display.consent && p.display.name ? p.display.name : '';
+  const shiftDay = (d, n) => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + n); return dayOf(x); };
+  const dayTitle = d => new Date(d + 'T12:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', weekday: 'long' });
+
+  function dayActivity(p, c, D, pairs) {
+    const res = { practice: [], theory: [] };
+    allItems(c).filter(it => O.lessons[it.id]).forEach(it => {
+      const L = O.lessons[it.id], r = (p.progress || {})[it.id] || {};
+      if (it.kind === 'theory') {
+        if (r.done && r.finishedAt && dayOf(r.finishedAt) === D) res.theory.push(it);
+        return;
+      }
+      if (!L.tasks) return;
+      const sts = L.tasks.map((t, i) => ({ t, i, st: (p.tasks || {})[it.id + '/' + t.id] || {} }));
+      const doneToday = sts.filter(x => x.st.passed && x.st.passedAt && dayOf(x.st.passedAt) === D).length;
+      const msToday = sts.reduce((sum, x) => sum + ((x.st.days || {})[D] || 0), 0);
+      const submittedToday = !!(r.done && r.finishedAt && dayOf(r.finishedAt) === D);
+      if (!doneToday && !msToday && !submittedToday) return;
+      const w = workOf(p, it.id);
+      const hasDays = sts.some(x => x.st.days);
+      const sim = pairs.filter(x => x.it.id === it.id && (x.a.p === p || x.b.p === p)).map(x => {
+        const mine = x.a.p === p ? x.a : x.b, other = x.a.p === p ? x.b : x.a;
+        const earlier = (other.st.passedAt || '') < (mine.st.passedAt || '');
+        return 'код итогового задания на ' + Math.round(x.s * 100) + '% как у ' + other.p.code + (earlier ? ' (тот сдал раньше)' : '');
+      });
+      const solutions = sts.filter(x => x.st.solution).map(x => x.i + 1);
+      // Для отчёта за день сигналы короче, чем в сводке: вставки — одной строкой на всё ПЗ.
+      const pasted = sts.filter(x => x.st.passed && !x.st.solution && (x.st.pasted || 0) >= PASTE_MIN && (x.st.pasted || 0) > (x.st.typed || 0));
+      const reasons = w.flags.filter(t => /^сдано/.test(t))
+        .concat(pasted.length ? ['вставлено ' + pasted.reduce((n, x) => n + x.st.pasted, 0) + ' симв. в ' + pasted.length + ' из ' + sts.length + ' заданий, набрано ' + pasted.reduce((n, x) => n + (x.st.typed || 0), 0)] : [])
+        .concat(sim);
+      const score = sts.reduce((sum, x) => sum + (x.st.passed ? (x.st.points || 0) : 0), 0);
+      res.practice.push({
+        it, sts, w, reasons, solutions, score,
+        status: reasons.length ? 'check' : solutions.length ? 'solution' : 'self',
+        passed: sts.filter(x => x.st.passed).length,
+        hints: sts.filter(x => x.st.hint).length,
+        submitted: !!r.done, submittedToday, mark: r.mark,
+        active: hasDays ? msToday : w.active, activeIsTotal: !hasDays
+      });
+    });
+    return res;
+  }
+
+  function renderDayReport({ c, group, rows, viewTabs, groupSelect }) {
+    const D = state.date || dayOf();
+    const onlyActive = state.onlyActive !== false;
+    const students = rows.filter(p => !p.example);
+    const pairs = similarPairs(students, allItems(c).filter(i => i.kind === 'practice'));
+    const data = students.map(p => ({ p, a: dayActivity(p, c, D, pairs) }));
+    const active = data.filter(x => x.a.practice.length || x.a.theory.length);
+    const entries = active.flatMap(x => x.a.practice);
+    const shown = onlyActive ? active : data;
+
+    const STATUS = {
+      self: '<span class="st-badge ok">' + ico('check') + 'Сам</span>',
+      check: '<span class="st-badge wr">⚑ Проверить</span>',
+      solution: '<span class="st-badge nt">' + ico('eye') + 'Открыто решение</span>'
+    };
+    const statusText = { self: 'Сам', check: 'Проверить', solution: 'Открыто решение' };
+    const statusNote = e => e.status === 'check' ? e.reasons.join('; ')
+      : e.status === 'solution' ? 'решение открыто: задани' + (e.solutions.length > 1 ? 'я ' : 'е ') + e.solutions.join(', ') + ' — за ' + (e.solutions.length > 1 ? 'них' : 'него') + ' баллы не начислены'
+      : 'набрано ' + e.w.typed + ' · вставлено ' + e.w.pasted + (e.w.uploaded ? ' · из файла ' + e.w.uploaded : '') + ' · проверок ' + e.w.checks;
+    const doneText = e => (e.submitted ? 'ПЗ №' + e.it.num + ' сдано' + (e.submittedToday ? '' : ' ранее') + ': ' : 'ПЗ №' + e.it.num + ': ') +
+      e.passed + ' из ' + e.sts.length + ' заданий' + (e.submitted ? ', ' + e.score + ' б.' : ', не сдано') +
+      (e.hints ? ' · подсказок ' + e.hints : '');
+    const markCell = e => e.submitted
+      ? markHtml(e.mark) + (e.status === 'check' ? '<span class="mark-q" title="Есть признаки списывания: поговорите со студентом">?</span>' : '')
+      : '<span class="muted">в работе</span>';
+    const minutesCell = e => e.w.tracked || e.active ? mins(e.active) + (e.activeIsTotal ? '<small class="muted"> всего</small>' : '') : '—';
+    const detail = (e, key) => '<tr class="day-detail" id="dd-' + key + '" hidden><td></td><td colspan="4"><ul class="dd-list">' +
+      e.sts.map(x => '<li>' + (x.st.passed ? ico('check') : ico('dot')) + '<span><b>Задание ' + (x.i + 1) + '.</b> ' + esc(x.t.title) + ' — ' +
+        (x.st.days && x.st.days[D] ? mins(x.st.days[D]) + ' сегодня' : (x.st.activeMs ? mins(x.st.activeMs) + ' всего' : 'время не записано')) +
+        ' · набрано ' + (x.st.typed || 0) + ' · вставлено ' + (x.st.pasted || 0) + (x.st.uploaded ? ' · из файла ' + x.st.uploaded : '') + ' · проверок ' + (x.st.checks || 0) +
+        (x.st.hint ? ' · подсказка' : '') + (x.st.solution ? ' · <b>решение открыто</b>' : '') + (x.st.passed ? '' : ' · <i>не выполнено</i>') + '</span></li>').join('') +
+      '</ul></td></tr>';
+
+    let k = 0;
+    const body = shown.map(({ p, a }) => {
+      const who = '<td>' + esc(p.code) + (studentName(p) ? '<small class="rep-name">' + esc(studentName(p)) + '</small>' : '') + '</td>';
+      const theory = a.theory.length ? '<small class="muted d-sub">+ ' + a.theory.map(it => 'урок ' + esc(it.num)).join(', ') + '</small>' : '';
+      if (!a.practice.length) {
+        return '<tr>' + who + '<td>' + (a.theory.length ? 'Пройден ' + a.theory.map(it => 'урок ' + esc(it.num)).join(', ') : '<span class="muted">не заходил(а)</span>') +
+          '</td><td>—</td><td>—</td><td>—</td></tr>';
+      }
+      return a.practice.map((e, i) => {
+        const key = k++;
+        return '<tr class="day-row" data-dd="' + key + '" tabindex="0" title="Нажмите, чтобы увидеть задания">' + (i === 0 ? who : '<td></td>') +
+          '<td>' + doneText(e) + (i === 0 ? theory : '') + '</td>' +
+          '<td>' + minutesCell(e) + '</td>' +
+          '<td>' + STATUS[e.status] + '<small class="muted d-sub">' + esc(statusNote(e)) + '</small></td>' +
+          '<td>' + markCell(e) + '</td></tr>' + detail(e, key);
+      }).join('');
+    }).join('');
+
+    app.innerHTML = teacherBar() +
+      '<main class="wrap" style="max-width:1200px">' +
+        '<div class="course-head"><button class="back" id="t-back">' + ico('back') + (S.user() ? 'На главную' : 'Ко входу') + '</button>' +
+          '<span class="eyebrow">' + esc(c.code) + ' · отчёт за день</span><h1>' + esc(c.title) + '</h1></div>' +
+        '<div class="rep-tools">' + groupSelect + viewTabs +
+          '<div class="day-nav"><button class="icon-btn" id="d-prev" aria-label="Предыдущий день">' + ico('back') + '</button>' +
+            '<label class="sr" for="d-date">День</label><input type="date" id="d-date" value="' + D + '" max="' + dayOf() + '">' +
+            '<button class="icon-btn d-next" id="d-next" aria-label="Следующий день"' + (D >= dayOf() ? ' disabled' : '') + '>' + ico('back') + '</button>' +
+            '<span class="day-title">' + esc(dayTitle(D)) + '</span></div>' +
+          '<label class="tgl"><input type="checkbox" id="d-only"' + (onlyActive ? ' checked' : '') + '> только кто занимался</label>' +
+          (S.remote ? '<button class="btn small" id="t-reload">' + ico('reset') + 'Обновить</button>' : '') +
+          '<button class="btn small primary" id="d-copy" style="margin-left:auto">' + ico('copy') + 'Копировать оценки</button>' +
+        '</div>' +
+        '<div class="stats day-stats">' +
+          '<div class="stat"><b>' + active.length + ' <small>из ' + students.length + '</small></b><span>занимались</span></div>' +
+          '<div class="stat"><b>' + entries.filter(e => e.submittedToday).length + '</b><span>сдали ПЗ</span></div>' +
+          '<div class="stat s-warn"><b>' + entries.filter(e => e.status === 'check').length + '</b><span>нужно проверить</span></div>' +
+          '<div class="stat"><b>' + (students.length - active.length) + '</b><span>не заходили</span></div>' +
+        '</div>' +
+        '<div class="scroll-x"><table class="rep rep-left day-table"><thead><tr><th>Студент</th><th>Что сделал за день</th><th>Активно</th><th>Сам или нет</th><th>Оценка</th></tr></thead><tbody>' +
+          (body || '<tr><td colspan="5" class="muted" style="padding:20px">В этот день никто из группы ' + esc(group) + ' не занимался.</td></tr>') +
+        '</tbody></table></div>' +
+        '<p class="note">Нажмите на строку, чтобы увидеть задания: сколько минут, сколько набрано руками и вставлено, сколько было проверок. ' +
+          '«Проверить» — ПЗ сдано на «4» или «5» быстрее ' + FAST_PZ_MIN + ' минут, в задании вставлено больше кода, чем набрано, или код итогового задания почти совпадает с чужим. Это повод попросить студента объяснить код, а не доказательство списывания. ' +
+          'Оценка — по шкале: от 85% баллов «5», от 70% — «4», от 50% — «3». Минуты по дням считаются с 01.11.2026; для более ранней работы показано общее время («всего»).</p>' +
+      '</main>';
+
+    bindTeacherBar();
+    const go2 = patch => go('teacher', Object.assign({ group, view: 'day', date: D, onlyActive }, patch));
+    document.getElementById('t-back').addEventListener('click', () => go('home'));
+    document.getElementById('t-group').addEventListener('change', e => go2({ group: e.target.value }));
+    app.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => go('teacher', { group, view: b.dataset.view })));
+    document.getElementById('d-prev').addEventListener('click', () => go2({ date: shiftDay(D, -1) }));
+    document.getElementById('d-next').addEventListener('click', () => go2({ date: shiftDay(D, 1) }));
+    document.getElementById('d-date').addEventListener('change', e => { if (e.target.value) go2({ date: e.target.value }); });
+    document.getElementById('d-only').addEventListener('change', e => go2({ onlyActive: e.target.checked }));
+    const rl = document.getElementById('t-reload');
+    if (rl) rl.addEventListener('click', () => go2({}));
+    app.querySelectorAll('.day-row').forEach(tr => {
+      const toggle = () => { const d = document.getElementById('dd-' + tr.dataset.dd); d.hidden = !d.hidden; tr.classList.toggle('open', !d.hidden); };
+      tr.addEventListener('click', toggle);
+      tr.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+    });
+    document.getElementById('d-copy').addEventListener('click', () => {
+      const head = ['Дата', 'Группа', 'Код', 'Имя', 'ПЗ', 'Сделано', 'Баллы', 'Оценка', 'Сам или нет', 'Минуты', 'Пояснение'].join('\t');
+      const lines = active.flatMap(({ p, a }) => a.practice.map(e => [
+        D, group, p.code, studentName(p), 'ПЗ №' + e.it.num, e.passed + ' из ' + e.sts.length,
+        e.submitted ? e.score : '', e.submitted ? (e.mark || 'н/з') + (e.status === 'check' ? '?' : '') : 'в работе',
+        statusText[e.status], Math.round(e.active / 60000) + (e.activeIsTotal ? ' (всего)' : ''), statusNote(e)
+      ].join('\t')));
+      copyText(head + '\n' + lines.join('\n'));
     });
   }
 

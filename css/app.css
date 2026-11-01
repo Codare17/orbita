@@ -502,3 +502,32 @@ kbd { font: 12px var(--f-mono); padding: 1px 5px; border-radius: 5px; border: 1p
 
 /* Без лигатур: новички должны видеть >=, != и -> так, как их нужно набирать, а не ≥, ≠, → */
 .ed, .code, .prose code, .q code, .opt code, .tok, .mitem.term, .console { font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0; }
+
+/* отчёт «За день» */
+.day-nav { display: inline-flex; align-items: center; gap: 4px; }
+.day-nav input[type="date"] { height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg-2); color: var(--fg); padding: 0 10px; font: inherit; }
+.day-nav .d-next .ico { transform: rotate(180deg); }
+.day-nav .icon-btn[disabled] { opacity: .35; cursor: default; }
+.day-title { color: var(--fg-2); font-size: 14px; padding-left: 6px; }
+.day-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.day-stats .stat b small { font: 400 14px var(--f-body); color: var(--fg-3); }
+.day-stats .s-warn b { color: var(--accent); }
+@media (max-width: 640px) { .day-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.day-table td { vertical-align: top; }
+.day-table td:nth-child(2) { min-width: 290px; white-space: normal; }
+.day-table td:nth-child(4) { min-width: 240px; white-space: normal; }
+.day-row { cursor: pointer; }
+.day-row:hover td, .day-row.open td { background: var(--bg-3); }
+.day-row:focus-visible { outline: 2px solid var(--sky); outline-offset: -2px; }
+.d-sub { display: block; margin-top: 3px; font-size: 12.5px; line-height: 1.4; }
+.st-badge { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 8px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.st-badge .ico { width: 14px; height: 14px; }
+.st-badge.ok { background: var(--ok-soft); color: var(--ok); }
+.st-badge.wr { background: var(--accent-soft); color: var(--accent); }
+.st-badge.nt { background: var(--bg-3); color: var(--fg-2); }
+.mark-q { display: inline-grid; place-items: center; margin-left: 4px; width: 20px; height: 20px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-weight: 700; font-size: 13px; vertical-align: middle; cursor: help; }
+.day-detail td { background: var(--bg-code); }
+.dd-list { list-style: none; margin: 0; padding: 4px 0; display: grid; gap: 6px; font-size: 13.5px; white-space: normal; }
+.dd-list li { display: flex; gap: 8px; align-items: flex-start; color: var(--fg-2); }
+.dd-list li .ico { width: 15px; height: 15px; margin-top: 2px; flex: none; color: var(--ok); }
+.dd-list b { color: var(--fg); }
