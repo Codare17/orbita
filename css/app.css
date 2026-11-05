@@ -559,3 +559,29 @@ kbd { font: 12px var(--f-mono); padding: 1px 5px; border-radius: 5px; border: 1p
 .daily-res.ok { color: var(--ok) !important; font-weight: 500; }
 .daily-res.bad { color: var(--fg-2); }
 @media (max-width: 480px) { .daily-opts { grid-template-columns: 1fr; } .dm-art { width: 72px; height: 48px; } }
+
+/* ---------- практика с ответом-числом (ЕКР) ---------- */
+.drill { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
+.drill .ws-top { position: sticky; top: 0; z-index: 5; }
+.drill-main { width: 100%; max-width: 760px; margin: 0 auto; padding: 22px var(--gutter-r) 64px var(--gutter-l); display: flex; flex-direction: column; gap: 18px; }
+.dr-text { font-size: 17px; }
+.dr-text sub, .dr-out sub, .dr-explain sub { font-size: .7em; }
+.dr-form { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.dr-input { flex: 1 1 180px; min-width: 0; max-width: 320px; height: 48px; padding: 0 14px; border-radius: 12px; border: 2px solid var(--line); background: var(--bg-code); font: 600 19px var(--f-mono); letter-spacing: .02em; }
+.dr-input:focus { border-color: var(--sky); outline: none; }
+.dr-unit { color: var(--fg-2); }
+.dr-form .btn { height: 48px; }
+.dr-wrong { color: var(--bad); font-size: 15px; }
+.dr-out p, .dr-explain p { font-size: 15.5px; line-height: 1.55; color: var(--fg); }
+.dr-out .btn { align-self: flex-start; margin-top: 4px; }
+.dr-explain summary { cursor: pointer; color: var(--fg-2); font-size: 15px; }
+.dr-explain[open] summary { margin-bottom: 6px; }
+.dr-mono { font-family: var(--f-mono); font-size: 15px; }
+.drill-graph { width: 100%; max-width: 520px; height: auto; background: var(--bg-2); border: 1px solid var(--line); border-radius: 14px; }
+.drill-table { border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 15px; background: var(--bg-2); border-radius: 12px; overflow: hidden; }
+.drill-table th, .drill-table td { padding: 6px 12px; border: 1px solid var(--line); text-align: center; }
+.drill-table th { background: var(--bg-3); font-weight: 600; }
+.drill-table.left td { text-align: left; }
+.dr-tables { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
+.dr-scroll { overflow-x: auto; max-width: 100%; }
+.rep tr.ekr-weak td { background: var(--bad-soft); }

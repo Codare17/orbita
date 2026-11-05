@@ -145,13 +145,14 @@
     if (state.screen === 'leaders') return renderLeaders();
     if (state.screen === 'theory') return renderTheory();
     if (state.screen === 'practice') return renderPractice();
+    if (state.screen === 'drill') return renderDrill();
     return renderHome();
   }
 
   function openItem(id) {
     const L = O.lessons[id];
     if (!L) return;
-    go(L.type === 'practice' ? 'practice' : 'theory', { id, course: findItem(id).course.id });
+    go(L.type === 'practice' ? 'practice' : L.type === 'drill' ? 'drill' : 'theory', { id, course: findItem(id).course.id });
   }
 
   /* ---------- уведомления ---------- */
@@ -182,7 +183,7 @@
   S.onStatus(() => document.querySelectorAll('.chip.sync').forEach(el => { el.outerHTML = syncChip(); }));
   S.onReset(all => {
     const lids = all.filter(id => id !== 'name');
-    if (state.screen === 'practice' && lids.includes(state.id)) go('course', { course: state.course });
+    if ((state.screen === 'practice' || state.screen === 'drill') && lids.includes(state.id)) go('course', { course: state.course });
     else if (['home', 'course', 'profile', 'leaders'].includes(state.screen)) render();
     if (lids.length) {
       const names = lids.map(id => { const it = findItem(id); return it ? itemLabel(it) : id; }).join(', ');
@@ -1159,6 +1160,183 @@
     applyLang(); runPreview(); drawScore(); drawTask();
   }
 
+  /* ---------- практика с ответом-числом (подготовка к ЕКР) ---------- */
+  // Задание — генератор условия (см. js/drill.js). Две попытки на вариант (на выбор из списка — одна);
+  // после них открывается разбор, а задание можно решить заново с другими числами за половину баллов.
+  const DR = window.OrbitaDrill;
+  const DRILL_TRIES = 2, RETRY_FACTOR = 0.5;
+  const drillTries = v => v.options ? 1 : DRILL_TRIES;
+  const drillWorth = (t, st) => Math.round(t.points * (st.hint ? HINT_FACTOR : 1) * (st.rev ? RETRY_FACTOR : 1));
+  function drillVariant(lid, t, st, user) {
+    const u = user || S.user();
+    return t.gen(DR.rng(DR.hash(u.group + '/' + u.code.toUpperCase() + '/' + lid + '/' + t.id + '/' + (st.rev || 0))));
+  }
+
+  function renderDrill() {
+    const it = findItem(state.id), L = O.lessons[state.id], lid = it.id, tasks = L.tasks;
+    let ti = state.task != null ? state.task : Math.max(0, tasks.findIndex(t => !S.task(lid, t.id).passed));
+    S.saveResult(lid, { started: true, kind: 'practice', startedAt: (S.result(lid) || {}).startedAt || new Date().toISOString() });
+
+    app.innerHTML =
+      '<div class="drill">' +
+        '<header class="ws-top">' +
+          '<button class="icon-btn" id="ws-back" aria-label="К карте курса">' + ico('back') + '</button>' +
+          '<div class="ws-title"><span class="eyebrow">ПЗ №' + it.num + ' · ' + it.hours + ' ак. ч</span><b>' + esc(it.title) + '</b></div>' +
+          '<div class="ws-score" id="ws-score"></div>' + syncChip() +
+          '<button class="btn small" id="ws-finish">' + ico('flag') + '<span class="lbl">Сдать ПЗ</span></button>' +
+        '</header>' +
+        '<nav class="ws-tasks" id="ws-tasks" aria-label="Задания"></nav>' +
+        '<main class="drill-main" id="dr-main"></main>' +
+      '</div>';
+    const root = app.querySelector('.drill'), main = document.getElementById('dr-main');
+
+    // Учёт активного времени — как в тренажёре кода (окно 90 секунд, шаг 5 секунд).
+    const ACTIVE_WINDOW = 90000, TICK = 5000;
+    let lastAct = Date.now(), pending = {};
+    const bump = (field, n) => { const id = tasks[ti].id, p = pending[id] || (pending[id] = {}); p[field] = (p[field] || 0) + n; };
+    function flushStats() {
+      const ids = Object.keys(pending);
+      if (!ids.length || !S.user()) { pending = {}; return; }
+      ids.forEach(id => {
+        const st = S.task(lid, id), p = pending[id], patch = {};
+        Object.keys(p).forEach(k => { patch[k] = (st[k] || 0) + p[k]; });
+        if (p.activeMs) { const days = Object.assign({}, st.days), d = dayOf(); days[d] = (days[d] || 0) + p.activeMs; patch.days = days; }
+        S.saveTask(lid, id, patch);
+      });
+      pending = {};
+      S.saveResult(lid, { activeMs: practiceScore(lid).activeMs });
+    }
+    ['keydown', 'pointerdown', 'input', 'wheel', 'touchstart'].forEach(ev => root.addEventListener(ev, () => { lastAct = Date.now(); }, { passive: true }));
+    const tickTimer = setInterval(() => { if (document.visibilityState === 'visible' && Date.now() - lastAct < ACTIVE_WINDOW) bump('activeMs', TICK); }, TICK);
+    const flushTimer = setInterval(flushStats, 30000);
+    teardown.push(() => { clearInterval(tickTimer); clearInterval(flushTimer); flushStats(); });
+
+    function drawScore() {
+      const s = practiceScore(lid);
+      document.getElementById('ws-score').innerHTML = '<span class="pts">' + s.score + '<small> / ' + s.max + ' б.</small></span>' + (s.passed ? markHtml(s.mark) : '');
+      document.getElementById('ws-tasks').innerHTML = tasks.map((t, i) => {
+        const st = S.task(lid, t.id);
+        const cls = (st.passed ? (st.points ? ' pass' : ' zero') : '') + (i === ti ? ' cur' : '');
+        return '<button class="tchip' + cls + '" data-t="' + i + '" aria-label="Задание ' + (i + 1) + (st.passed ? ', выполнено' : '') + '"' + (i === ti ? ' aria-current="step"' : '') + '>' + (st.passed ? ico('check') : '') + (i + 1) + '</button>';
+      }).join('');
+      document.querySelectorAll('#ws-tasks [data-t]').forEach(b => b.addEventListener('click', () => selectTask(+b.dataset.t)));
+    }
+
+    function drawTask() {
+      const t = tasks[ti], st = S.task(lid, t.id), v = drillVariant(lid, t, st);
+      const tries = st.tries || 0, left = drillTries(v) - tries, out = !st.passed && left <= 0;
+      const worth = drillWorth(t, st), answerText = Array.isArray(v.answer) ? v.answer[0] : v.answer;
+      const unit = v.unit ? ' ' + esc(v.unit) : '';
+      main.innerHTML =
+        (ti === 0 && L.intro ? '<div class="intro-box"><div class="prose">' + L.intro + '</div></div>' : '') +
+        '<div class="task-head"><span class="eyebrow">Задание ' + (ti + 1) + ' из ' + tasks.length + (t.ekr ? ' · ЕКР №' + t.ekr : '') + ' · ' +
+          (st.passed ? 'получено ' + (st.points || 0) : worth + (worth !== t.points ? ' из ' + t.points : '')) + ' б.</span>' +
+          '<h2>' + esc(t.title) + '</h2>' + (st.rev ? '<span class="tag sky">Новый вариант</span>' : '') + '</div>' +
+        '<div class="prose dr-text">' + v.text + '</div>' +
+        (v.img || '') + (v.table || '') + (v.code ? codeBlock({ lang: 'py', src: v.code }) : '') +
+        (v.options ? '<div class="opts dr-opts">' + v.options.map((o, i) => {
+          const n = String(i + 1);
+          const cls = st.last === n ? (st.passed ? ' ok' : ' bad') : out && n === answerText ? ' missed' : '';
+          return '<button class="opt' + cls + '" data-n="' + n + '"' + (st.passed || out ? ' disabled' : '') + '><span class="opt-k">' + n + '</span><span class="dr-mono">' + esc(o) + '</span></button>';
+        }).join('') + '</div>' : '') +
+        (st.passed
+          ? '<div class="pass-box"><b>Верно: ' + esc(st.last) + unit + (st.points ? ' · +' + st.points + ' б.' : '') + '</b>' +
+            '<details class="dr-explain"><summary>Разбор</summary><p>' + v.explain + '</p></details>' +
+            (ti < tasks.length - 1 ? '<button class="btn ok" id="dr-next">Следующее задание →</button>' : '<button class="btn ok" id="dr-done">Сдать ПЗ</button>') + '</div>'
+          : out
+            ? '<div class="code-err dr-out"><b>Попытки закончились. Правильный ответ: ' + esc(answerText) + unit + '</b><p>' + v.explain + '</p>' +
+              '<button class="btn primary" id="dr-again">' + ico('reset') + 'Решить с другими числами · до ' + Math.round(t.points * (st.hint ? HINT_FACTOR : 1) * RETRY_FACTOR) + ' б.</button></div>'
+            : (v.options ? '' :
+                '<form class="dr-form" id="dr-form" autocomplete="off"><label for="dr-input" class="sr">Ответ</label>' +
+                '<input id="dr-input" class="dr-input" inputmode="' + (/^-?\d+$/.test(answerText) ? 'numeric' : 'text') + '" placeholder="Ответ" spellcheck="false" autocapitalize="off">' +
+                (v.unit ? '<span class="dr-unit">' + esc(v.unit) + '</span>' : '') +
+                '<button class="btn primary" type="submit">' + ico('check') + 'Проверить</button></form>') +
+              (tries ? '<p class="dr-wrong" role="status">Ответ «' + esc(st.last) + '» неверный. Осталось попыток: ' + left + '.</p>' : '')) +
+        (!st.passed && !out && !st.hint ? '<div class="task-actions"><button class="btn small" id="dr-hint">' + ico('bulb') + 'Подсказка −30%</button></div>' : '') +
+        (st.hint && !st.passed ? '<div class="hint-box"><b>Подсказка.</b> ' + (v.hint || t.hint) + '</div>' : '');
+
+      const submit = val => {
+        val = String(val || '').trim();
+        if (!val) return;
+        bump('checks', 1);
+        const cur = S.task(lid, t.id);
+        if (DR.check(val, v.answer, v.letters)) {
+          const pts = drillWorth(t, cur);
+          S.saveTask(lid, t.id, { passed: true, points: pts, passedAt: new Date().toISOString(), last: val });
+          if (pts) S.addXP(pts);
+          const sc = practiceScore(lid);
+          S.saveResult(lid, { score: sc.score, max: sc.max, pct: sc.pct, mark: sc.mark });
+          announceAch(checkAchievements());
+          toast('<b>Задание ' + (ti + 1) + ' решено!</b>' + (pts ? ' +' + pts + ' XP' : ''), 'check');
+        } else {
+          S.saveTask(lid, t.id, { tries: (cur.tries || 0) + 1, last: val });
+        }
+        flushStats();
+        drawScore(); drawTask();
+        const inp = document.getElementById('dr-input');
+        if (inp) inp.focus();
+      };
+      const form = document.getElementById('dr-form');
+      if (form) form.addEventListener('submit', e => { e.preventDefault(); submit(document.getElementById('dr-input').value); });
+      main.querySelectorAll('.dr-opts .opt:not([disabled])').forEach(b => b.addEventListener('click', () => submit(b.dataset.n)));
+      const h = document.getElementById('dr-hint');
+      if (h) h.addEventListener('click', () => { S.saveTask(lid, t.id, { hint: true }); drawTask(); });
+      const again = document.getElementById('dr-again');
+      if (again) again.addEventListener('click', () => { S.saveTask(lid, t.id, { rev: (st.rev || 0) + 1, tries: 0, last: '' }); drawTask(); });
+      const nx = document.getElementById('dr-next');
+      if (nx) nx.addEventListener('click', () => selectTask(ti + 1));
+      const dn = document.getElementById('dr-done');
+      if (dn) dn.addEventListener('click', finish);
+    }
+
+    function selectTask(i) {
+      if (i < 0 || i >= tasks.length) return;
+      ti = i;
+      drawScore(); drawTask();
+      window.scrollTo(0, 0);
+      const inp = document.getElementById('dr-input');
+      if (inp && window.matchMedia('(min-width: 1000px)').matches) inp.focus();
+    }
+
+    function finish() {
+      const s = practiceScore(lid);
+      const back = document.createElement('div');
+      back.className = 'modal-back';
+      back.innerHTML =
+        '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="sum-h">' +
+          '<h2 id="sum-h">Сдать ПЗ №' + it.num + '?</h2>' +
+          '<table class="sum-table"><tbody>' + tasks.map((t, i) => {
+            const st = S.task(lid, t.id);
+            return '<tr><td>' + (i + 1) + '. ' + esc(t.title) + (t.ekr ? ' <span class="muted">· ЕКР №' + t.ekr + '</span>' : '') + '</td><td>' + (st.passed ? (st.points || 0) : '—') + ' / ' + t.points + '</td></tr>';
+          }).join('') + '</tbody></table>' +
+          '<div class="sum-total"><span>Итого ' + s.score + ' из ' + s.max + ' баллов (' + s.pct + '%)</span>' + markHtml(s.mark) + '</div>' +
+          '<p class="note">Шкала: от 85% — «5», от 70% — «4», от 50% — «3». ' + (s.mark ? 'После сдачи можно вернуться и дорешать задания: оценка пересчитается.' : 'Пока набрано меньше 50%. Можно сдать сейчас и дорешать позже.') + '</p>' +
+          '<div class="modal-actions"><button class="btn ghost" id="sum-cancel">Продолжить работу</button><button class="btn primary" id="sum-ok">Сдать</button></div>' +
+        '</div>';
+      document.body.appendChild(back);
+      const close = () => back.remove();
+      teardown.push(close);
+      back.addEventListener('click', e => { if (e.target === back) close(); });
+      document.getElementById('sum-cancel').addEventListener('click', close);
+      document.getElementById('sum-ok').addEventListener('click', () => {
+        flushStats();
+        const wasDone = (S.result(lid) || {}).done;
+        S.saveResult(lid, { done: true, kind: 'practice', score: s.score, max: s.max, pct: s.pct, mark: s.mark, clean: s.clean, activeMs: practiceScore(lid).activeMs, finishedAt: new Date().toISOString() });
+        if (!wasDone) S.addXP(10);
+        const fresh = checkAchievements();
+        close();
+        go('course', { course: it.course.id });
+        toast('<b>ПЗ №' + it.num + ' сдано.</b> Оценка: ' + (s.mark || 'н/з') + '.' + (wasDone ? '' : ' +10 XP'), 'flag');
+        announceAch(fresh);
+      });
+      document.getElementById('sum-ok').focus();
+    }
+
+    document.getElementById('ws-back').addEventListener('click', () => go('course', { course: it.course.id }));
+    document.getElementById('ws-finish').addEventListener('click', finish);
+    drawScore(); drawTask();
+  }
+
   /* ---------- отчёт преподавателя ---------- */
   const TEACHER_KEY = 'orbita.teacher';
   const teacherPass = {
@@ -1270,7 +1448,7 @@
   }
 
   async function renderTeacher() {
-    // Группа определяет курс: КСК — ДУП.05, ИС — ДУП.02.
+    // Группа определяет курс: КСК — ДУП.05, ИС — ДУП.02, РЭУС — подготовка к ЕКР.
     const allGroups = O.courses.flatMap(x => x.groups);
     const group = allGroups.includes(state.group) ? state.group : allGroups[0];
     const c = O.courses.find(x => x.groups.includes(group));
@@ -1327,6 +1505,7 @@
       if (w.flags.length) flagged.push({ p, it, w, mark: (p.progress[it.id] || {}).mark });
     }));
     const finals = pz.filter(i => O.lessons[i.id] && O.lessons[i.id].tasks.some(t => t.final)).map(i => '№' + i.num);
+    const ekr = ekrStats(rows.filter(p => !p.example), pz, c);
 
     app.innerHTML = teacherBar() +
       '<main class="wrap" style="max-width:1200px">' +
@@ -1347,6 +1526,12 @@
         '</tbody></table></div>' +
         '<p class="note">Шкала: от 85% баллов за ПЗ — «5», от 70% — «4», от 50% — «3». Подсказка снижает баллы за задание на 30%, просмотр решения — до нуля. ' +
           (S.remote ? 'Данные загружены из Google Таблицы только что; кто ещё не входил, показан прочерками.' : 'Без облака видны только студенты, занимавшиеся в этом браузере.') + '</p>' +
+        (ekr.length ? '<section><div class="section-h"><h2>Задания ЕКР</h2></div>' +
+          '<div class="scroll-x"><table class="rep rep-left"><thead><tr><th>№ ЕКР</th><th>Что проверяет</th><th>Начато заданий</th><th>Решено с первого варианта</th><th>Решено в итоге</th><th>Не решено</th></tr></thead><tbody>' +
+          ekr.map(x => '<tr' + (x.tried && x.first / x.tried < 0.6 ? ' class="ekr-weak"' : '') + '><td>' + x.n + '</td><td class="wrap-cell">' + esc(x.topic || x.titles.join('; ')) + '</td><td>' + x.tried + '</td>' +
+            '<td>' + (x.tried ? x.first + ' (' + Math.round(x.first / x.tried * 100) + '%)' : '—') + '</td><td>' + (x.tried ? x.solved : '—') + '</td><td>' + (x.tried ? x.tried - x.solved : '—') + '</td></tr>').join('') +
+          '</tbody></table></div>' +
+          '<p class="note">Считаются задания этого типа во всех практиках у всех студентов группы. «С первого варианта» — без разбора и повторного решения с другими числами. Строки, где так решено меньше 60% начатых заданий, выделены: эту тему стоит повторить с группой.</p></section>' : '') +
         '<section><div class="section-h"><h2>Обратить внимание</h2></div>' +
           (flagged.length
             ? '<div class="scroll-x"><table class="rep rep-left"><thead><tr><th>Код</th><th>ПЗ</th><th>Активно</th><th>Набрано / вставлено</th><th>Проверок</th><th>Что настораживает</th></tr></thead><tbody>' +
@@ -1378,6 +1563,27 @@
       const body = rows.filter(p => !p.example).map(p => [group, p.code].concat(pz.map(i => cell(p, i).text), [theoryDone(p) + '/' + th.length, p.xp]).join('\t')).join('\n');
       copyText(head + '\n' + body);
     });
+  }
+
+  // Статистика по номерам заданий ЕКР: сколько студентов брались, решили с первого варианта, решили в итоге.
+  function ekrStats(students, pz, c) {
+    const by = {};
+    pz.forEach(it => {
+      const L = O.lessons[it.id];
+      if (!L || L.type !== 'drill') return;
+      L.tasks.filter(t => t.ekr).forEach(t => {
+        const x = by[t.ekr] || (by[t.ekr] = { n: t.ekr, topic: (c.ekr || {})[t.ekr], titles: [], tried: 0, first: 0, solved: 0 });
+        if (!x.titles.includes(t.title)) x.titles.push(t.title);
+        students.forEach(p => {
+          const st = (p.tasks || {})[it.id + '/' + t.id];
+          if (!st || !(st.passed || st.tries || st.rev)) return;
+          x.tried++;
+          if (st.passed) x.solved++;
+          if (st.passed && !st.rev) x.first++;
+        });
+      });
+    });
+    return Object.values(by).sort((a, b) => a.n - b.n);
   }
 
   function copyText(text) {
