@@ -1,16 +1,16 @@
 /* Собрано из исходников платформы (node build.mjs site). Эталонные решения хранятся в Google Таблице. */
 window.ORBITA.lessons['ai-pz-04'] = {
   type: "practice",
-  intro: "<p>Списки и строки — основа работы с данными: таблица — это список строк, строка таблицы — список значений. Помните: нумерация начинается с нуля, а отрицательный индекс считает с конца.</p>",
+  intro: "<p>Списки и строки — основа работы с данными: таблица — это список строк, а строка таблицы — список значений. Без них не обходится ни одна программа для ИИ.</p><p>Три правила, которые нужны в каждом задании: нумерация элементов начинается с <b>нуля</b> (<code>marks[0]</code> — первый элемент); отрицательный индекс считает с конца (<code>marks[-1]</code> — последний); срез <code>[1:3]</code> берёт элементы 1 и 2 — правая граница не входит.</p>",
   tasks: [
     {
       id: "t1",
       title: "Индексы",
       points: 10,
       lang: "py",
-      text: "<p>Дан список оценок <code>marks</code>. Выведите три строки: сколько в нём элементов, первый элемент и последний элемент.</p>",
-      starter: "marks = [5, 4, 3, 5, 4]\n",
-      hint: "Длина — <code>len(marks)</code>, первый — <code>marks[0]</code>, последний — <code>marks[-1]</code>.",
+      text: "<p><b>Теория.</b> Длина списка — <code>len(список)</code>, обращение по индексу — квадратные скобки: <code>marks[0]</code> — первый элемент, <code>marks[-1]</code> — последний. Так список из 5 оценок раскладывается на части без всяких циклов.</p><p>Дан список оценок <code>marks</code>. Выведите три строки: сколько в нём элементов, первый элемент и последний элемент.</p>",
+      starter: "marks = [5, 4, 3, 5, 4]\n# print(len(marks))\n# print(marks[0])\n# print(marks[-1])\n",
+      hint: "Длина — <code>len(marks)</code>, первый — <code>marks[0]</code>, последний — <code>marks[-1]</code>. Код уже дан в заготовке — раскомментируйте строки.",
       tests: [
         {
           name: "Длина, первый, последний",
@@ -27,9 +27,9 @@ window.ORBITA.lessons['ai-pz-04'] = {
       title: "Срезы",
       points: 15,
       lang: "py",
-      text: "<p>Дан список <code>numbers</code> от 1 до 10. С помощью срезов выведите три списка:</p><ul><li>первые три элемента — <code>[1, 2, 3]</code>;</li><li>последние три — <code>[8, 9, 10]</code>;</li><li>каждый второй, начиная с первого, — <code>[1, 3, 5, 7, 9]</code>.</li></ul>",
-      starter: "numbers = list(range(1, 11))\n",
-      hint: "Срез <code>[начало:конец:шаг]</code>. Последние три — <code>numbers[-3:]</code>, каждый второй — <code>numbers[::2]</code>.",
+      text: "<p><b>Теория.</b> Срез выглядит как <code>список[начало:конец:шаг]</code>, любая часть может быть пустой. Правая граница не входит — как в <code>range</code>:</p><ul><li><code>numbers[:3]</code> — первые три (с 0-го по 2-й);</li><li><code>numbers[-3:]</code> — последние три (с конца до конца списка);</li><li><code>numbers[::2]</code> — каждый второй, начиная с первого.</li></ul><p>Дан список <code>numbers</code> от 1 до 10. С помощью срезов выведите три списка:</p><ul><li>первые три элемента — <code>[1, 2, 3]</code>;</li><li>последние три — <code>[8, 9, 10]</code>;</li><li>каждый второй, начиная с первого, — <code>[1, 3, 5, 7, 9]</code>.</li></ul>",
+      starter: "numbers = list(range(1, 11))\n# print(numbers[:3])\n# print(numbers[-3:])\n# print(numbers[::2])\n",
+      hint: "Срез <code>[начало:конец:шаг]</code>. Последние три — <code>numbers[-3:]</code>, каждый второй — <code>numbers[::2]</code>. Выводится список целиком одним print.",
       tests: [
         {
           name: "Первые три",
@@ -54,9 +54,9 @@ window.ORBITA.lessons['ai-pz-04'] = {
       title: "Среднее и максимум",
       points: 15,
       lang: "py",
-      text: "<p>В списке <code>temps</code> температура за неделю. Одним циклом найдите сумму и максимум, затем выведите:</p><p><code>Среднее: 2.0</code><br><code>Максимум: 7</code></p><p>Готовые <code>sum()</code> и <code>max()</code> не используйте.</p>",
-      starter: "temps = [-3, 2, 5, -1, 7, 4, 0]\n",
-      hint: "Начните с <code>total = 0</code> и <code>biggest = temps[0]</code>, в цикле <code>for t in temps:</code> обновляйте оба.",
+      text: "<p><b>Теория.</b> Найти максимум вручную можно так: запомнить первый элемент как «пока самый большой», затем в цикле сравнивать каждый следующий — если он больше, перезапомнить:</p><pre class=\"code\"><code>biggest = temps[0]\nfor t in temps:\n    if t &gt; biggest:\n        biggest = t</code></pre><p>Сумма копится параллельно в той же переменной-приёмнике (<code>total += t</code>).</p><p>В списке <code>temps</code> температура за неделю. Одним циклом найдите сумму и максимум, затем выведите:</p><p><code>Среднее: 2.0</code><br><code>Максимум: 7</code></p><p>Готовые <code>sum()</code> и <code>max()</code> не используйте.</p>",
+      starter: "temps = [-3, 2, 5, -1, 7, 4, 0]\ntotal = 0\nbiggest = temps[0]\n# for t in temps:\n#     total += t\n#     if t > biggest:\n#         biggest = t\n# print(f\"Среднее: {total / len(temps):.1f}\")\n# print(f\"Максимум: {biggest}\")\n",
+      hint: "Начните с <code>total = 0</code> и <code>biggest = temps[0]</code>, в цикле <code>for t in temps:</code> обновляйте оба. Среднее = сумма / длина.",
       tests: [
         {
           name: "Среднее с одним знаком",
@@ -77,9 +77,9 @@ window.ORBITA.lessons['ai-pz-04'] = {
       title: "Фильтр",
       points: 15,
       lang: "py",
-      text: "<p>Из списка баллов <code>scores</code> соберите новый список <code>passed</code> — только баллы от 50 и выше. Выведите <code>passed</code> и его длину.</p>",
-      starter: "scores = [92, 45, 78, 30, 50, 66, 49, 85]\npassed = []\n",
-      hint: "В цикле: <code>if s &gt;= 50: passed.append(s)</code>.",
+      text: "<p><b>Теория.</b> Фильтрация — перебираем исходный список и в новый добавляем только подходящие элементы:</p><pre class=\"code\"><code>passed = []              # новый пустой список\nfor s in scores:\n    if s &gt;= 50:\n        passed.append(s)   # append добавляет в конец</code></pre><p>Метод <code>append()</code> меняет список, к которому применён. Исходный список при этом не трогаем — фильтр строит новый.</p><p>Из списка баллов <code>scores</code> соберите новый список <code>passed</code> — только баллы от 50 и выше. Выведите <code>passed</code> и его длину.</p>",
+      starter: "scores = [92, 45, 78, 30, 50, 66, 49, 85]\npassed = []\n# for s in scores:\n#     if s >= 50:\n#         passed.append(s)\n# print(passed)\n# print(len(passed))\n",
+      hint: "В цикле: <code>if s &gt;= 50: passed.append(s)</code>. Граница входит: балл ровно 50 — зачёт.",
       tests: [
         {
           name: "В passed только баллы от 50",
@@ -101,9 +101,9 @@ window.ORBITA.lessons['ai-pz-04'] = {
       points: 15,
       lang: "py",
       stdin: "Машинное обучение",
-      text: "<p>Пользователь вводит фразу. Выведите четыре строки:</p><ol><li>фразу заглавными буквами;</li><li>её длину;</li><li>сколько раз в ней встречается буква «о»;</li><li>фразу задом наперёд.</li></ol>",
-      starter: "s = input()\n",
-      hint: "<code>s.upper()</code>, <code>len(s)</code>, <code>s.count(\"о\")</code>, <code>s[::-1]</code>.",
+      text: "<p><b>Теория.</b> Строка похожа на список символов — у неё есть длина, индексы и срезы. Полезные методы:</p><ul><li><code>s.upper()</code> — все буквы заглавные;</li><li><code>len(s)</code> — длина;</li><li><code>s.count(\"о\")</code> — сколько раз встречается кусок;</li><li><code>s[::-1]</code> — строка задом наперёд (срез с шагом −1).</li></ul><p>Методы возвращают новую строку — исходная остаётся как была.</p><p>Пользователь вводит фразу. Выведите четыре строки: фразу заглавными буквами; её длину; сколько раз в ней встречается буква «о»; фразу задом наперёд.</p>",
+      starter: "s = input()\n# print(s.upper())\n# print(len(s))\n# print(s.count(\"о\"))\n# print(s[::-1])\n",
+      hint: "<code>s.upper()</code>, <code>len(s)</code>, <code>s.count(\"о\")</code>, <code>s[::-1]</code>. Буква «о» — русская, в кавычках именно она.",
       tests: [
         {
           name: "«Машинное обучение»",
@@ -122,9 +122,9 @@ window.ORBITA.lessons['ai-pz-04'] = {
       points: 15,
       lang: "py",
       stdin: "5 4 3 5",
-      text: "<p>Пользователь вводит оценки в одной строке через пробел. Превратите строку в список чисел и выведите:</p><p><code>Сумма: 17</code><br><code>По возрастанию: 3, 4, 5, 5</code></p>",
-      starter: "line = input()\n",
-      hint: "<code>line.split()</code> даёт список строк; каждую превратите в <code>int</code>. Соединить через запятую: <code>\", \".join(…)</code> — только для строк.",
+      text: "<p><b>Теория.</b> Метод <code>line.split()</code> разбивает строку по пробелам и возвращает список строк: из <code>\"5 4 3 5\"</code> получится <code>[\"5\", \"4\", \"3\", \"5\"]</code>. Каждую строку превращают в число через <code>int()</code> в цикле.</p><p>Обратная операция — <code>\", \".join(список_строк)</code>: склеивает список в строку через запятую. Важно: join работает со строками, поэтому числа перед склейкой превращают: <code>str(m)</code>.</p><p>Пользователь вводит оценки в одной строке через пробел. Превратите строку в список чисел и выведите:</p><p><code>Сумма: 17</code><br><code>По возрастанию: 3, 4, 5, 5</code></p>",
+      starter: "line = input()\nmarks = []\n# for part in line.split():\n#     marks.append(int(part))\n# print(f\"Сумма: {sum(marks)}\")\n# text = \", \".join(str(m) for m in sorted(marks))\n# print(f\"По возрастанию: {text}\")\n",
+      hint: "<code>line.split()</code> даёт список строк; каждую превратите в <code>int</code>. Соединить через запятую: <code>\", \".join(…)</code> — только для строк, поэтому <code>str(m)</code>.",
       tests: [
         {
           name: "5 4 3 5",
@@ -144,9 +144,9 @@ window.ORBITA.lessons['ai-pz-04'] = {
       lang: "py",
       stdin: "Python помогает решать задачи ИИ",
       final: true,
-      text: "<p>Пользователь вводит фразу. Выведите:</p><p><code>Слов: 5</code><br><code>Самое длинное: помогает</code><br><code>Python-помогает-решать-задачи-ИИ</code></p><p>Если самых длинных слов несколько, выведите первое из них.</p>",
-      starter: "phrase = input()\n",
-      hint: "Слова — <code>phrase.split()</code>. Самое длинное ищите циклом, сравнивая <code>len(word)</code>. Соединить через дефис — <code>\"-\".join(words)</code>.",
+      text: "<p><b>Теория.</b> Собираем всё ПЗ в одной программе. План: <code>phrase.split()</code> режет фразу на слова → <code>len(words)</code> — число слов → цикл сравнивает длины слов и запоминает самое длинное → <code>\"-\".join(words)</code> склеивает слова через дефис.</p><p>Хитрость последней проверки: чтобы при равной длине оставалось <b>первое</b> слово, сравнение должно быть строгим — <code>&gt;</code>, а не <code>&gt;=</code>.</p><p>Пользователь вводит фразу. Выведите:</p><p><code>Слов: 5</code><br><code>Самое длинное: помогает</code><br><code>Python-помогает-решать-задачи-ИИ</code></p><p>Если самых длинных слов несколько, выведите первое из них.</p>",
+      starter: "phrase = input()\n# words = phrase.split()\n# longest = words[0]\n# for word in words:\n#     if len(word) > len(longest):\n#         longest = word\n# print(f\"Слов: {len(words)}\")\n# print(f\"Самое длинное: {longest}\")\n# print(\"-\".join(words))\n",
+      hint: "Слова — <code>phrase.split()</code>. Самое длинное ищите циклом, сравнивая <code>len(word)</code> (строго больше — чтобы первое слово побеждало при ничьей). Соединить через дефис — <code>\"-\".join(words)</code>.",
       tests: [
         {
           name: "Пример из задания",
