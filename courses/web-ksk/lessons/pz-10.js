@@ -246,7 +246,7 @@ window.ORBITA.lessons['pz-10'] = {
               const f = d.querySelector('#regForm'), n = d.querySelector('#visitor'), t = d.querySelector('#ticket'), e = d.querySelector('#error');
               if (!f || !n || !t || !e) return 'Нужны #regForm, #visitor, #ticket и #error.';
               n.value = 'Мария';
-              t.value = '12';
+              t.value = '12345678'.slice(0, +H.v.ticketLen + 1);
               f.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
               return e.textContent.trim() !== '' || 'При билете не из ' + H.v.ticketLen + ' символов должна быть ошибка.';
             }
@@ -257,7 +257,7 @@ window.ORBITA.lessons['pz-10'] = {
               const f = d.querySelector('#regForm'), n = d.querySelector('#visitor'), t = d.querySelector('#ticket'), e = d.querySelector('#error'), ok = d.querySelector('#ok');
               if (!f || !n || !t || !e || !ok) return 'Нужны #regForm, #visitor, #ticket, #error и #ok.';
               n.value = 'Мария';
-              t.value = 'ABCD'.slice(0, +H.v.ticketLen);
+              t.value = '12345678'.slice(0, +H.v.ticketLen);
               f.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
               if (e.textContent.trim() !== '') return 'При верных данных ошибка не должна показываться: «' + e.textContent.trim() + '».';
               return (ok.textContent.indexOf('Мария') >= 0 && n.value === '') || 'Ожидалось приветствие с именем и пустое поле имени. Сейчас: «' + ok.textContent.trim() + '», поле: «' + n.value + '».';
@@ -272,7 +272,7 @@ window.ORBITA.lessons['pz-10'] = {
               t.value = '12';
               f.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
               n.value = 'Мария';
-              t.value = 'ABCD'.slice(0, +H.v.ticketLen);
+              t.value = '12345678'.slice(0, +H.v.ticketLen);
               f.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
               return e.textContent.trim() === '' || 'Старая ошибка осталась на экране после успешной отправки.';
             }
