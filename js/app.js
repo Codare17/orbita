@@ -1480,6 +1480,9 @@
     });
     if (showEx) rows = rows.concat(exampleRows(c, group).filter(e => !rows.some(p => p.code.toUpperCase() === e.code)));
     rows.sort((a, b) => a.code.localeCompare(b.code, 'ru', { numeric: true }));
+    // Имена из колонки «Комментарий» листа «Коды» (заполняет преподаватель) — ключ «группа|КОД».
+    const tnames = r.names || {};
+    rows.forEach(p => { p.tname = tnames[group + '|' + String(p.code).toUpperCase()] || ''; });
 
     const view = state.view === 'summary' ? 'summary' : 'day';
     const viewTabs = '<div class="seg" role="tablist" aria-label="Вид отчёта">' +
@@ -1519,7 +1522,7 @@
         '</div>' +
         '<div class="legend"><span>' + markHtml(5) + markHtml(4) + markHtml(3) + ' сдано</span><span>' + markHtml(null) + ' сдано, меньше 50%</span><span><span class="pct">38%</span> в работе</span><span><span class="none">—</span> не начато</span></div>' +
         '<div class="scroll-x"><table class="rep"><thead><tr><th>Код</th>' + pz.map(i => '<th title="' + esc(i.title) + '">ПЗ ' + i.num + '</th>').join('') + '<th>Уроки</th><th>XP</th></tr></thead><tbody>' +
-          (rows.length ? rows.map(p => '<tr><td>' + esc(p.code) + (p.example ? '<span class="ex">пример</span>' : '') + (p.display && p.display.consent && p.display.name ? '<small class="rep-name">' + esc(p.display.name) + '</small>' : '') + '</td>' + pz.map(i => '<td>' + cell(p, i).html + '</td>').join('') +
+          (rows.length ? rows.map(p => '<tr><td>' + (p.tname ? '<b>' + esc(p.tname) + '</b><small class="rep-name">' + esc(p.code) + '</small>' : esc(p.code)) + (p.example ? '<span class="ex">пример</span>' : '') + (p.display && p.display.consent && p.display.name ? '<small class="rep-name">' + esc(p.display.name) + '</small>' : '') + '</td>' + pz.map(i => '<td>' + cell(p, i).html + '</td>').join('') +
             '<td>' + theoryDone(p) + '/' + th.length + '</td><td>' + p.xp + '</td></tr>').join('')
             : '<tr><td colspan="' + (pz.length + 3) + '" style="text-align:left;padding:20px" class="muted">' +
               (S.remote ? 'Для группы ' + esc(group) + ' ещё нет кодов. Создайте их в таблице: «Орбита → Создать коды для группы…».' : 'В группе ' + esc(group) + ' пока никто не занимался на этом устройстве.') + '</td></tr>') +
@@ -1559,8 +1562,8 @@
     app.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => rerender({ view: b.dataset.view })));
     document.getElementById('t-back').addEventListener('click', () => go('home'));
     document.getElementById('t-copy').addEventListener('click', () => {
-      const head = ['Группа', 'Код'].concat(pz.map(i => 'ПЗ №' + i.num), ['Уроки', 'XP']).join('\t');
-      const body = rows.filter(p => !p.example).map(p => [group, p.code].concat(pz.map(i => cell(p, i).text), [theoryDone(p) + '/' + th.length, p.xp]).join('\t')).join('\n');
+      const head = ['Группа', 'Код', 'Имя'].concat(pz.map(i => 'ПЗ №' + i.num), ['Уроки', 'XP']).join('\t');
+      const body = rows.filter(p => !p.example).map(p => [group, p.code, p.tname || ''].concat(pz.map(i => cell(p, i).text), [theoryDone(p) + '/' + th.length, p.xp]).join('\t')).join('\n');
       copyText(head + '\n' + body);
     });
   }
@@ -1678,7 +1681,7 @@
 
     let k = 0;
     const body = shown.map(({ p, a }) => {
-      const who = '<td>' + esc(p.code) + (studentName(p) ? '<small class="rep-name">' + esc(studentName(p)) + '</small>' : '') + '</td>';
+      const who = '<td>' + (p.tname ? '<b>' + esc(p.tname) + '</b><small class="rep-name">' + esc(p.code) + '</small>' : esc(p.code)) + (studentName(p) ? '<small class="rep-name">' + esc(studentName(p)) + '</small>' : '') + '</td>';
       const theory = a.theory.length ? '<small class="muted d-sub">+ ' + a.theory.map(it => 'урок ' + esc(it.num)).join(', ') + '</small>' : '';
       if (!a.practice.length) {
         return '<tr>' + who + '<td>' + (a.theory.length ? 'Пройден ' + a.theory.map(it => 'урок ' + esc(it.num)).join(', ') : '<span class="muted">не заходил(а)</span>') +
@@ -1740,7 +1743,7 @@
     document.getElementById('d-copy').addEventListener('click', () => {
       const head = ['Дата', 'Группа', 'Код', 'Имя', 'ПЗ', 'Сделано', 'Баллы', 'Оценка', 'Сам или нет', 'Минуты', 'Пояснение'].join('\t');
       const lines = active.flatMap(({ p, a }) => a.practice.map(e => [
-        D, group, p.code, studentName(p), 'ПЗ №' + e.it.num, e.passed + ' из ' + e.sts.length,
+        D, group, p.code, p.tname || studentName(p), 'ПЗ №' + e.it.num, e.passed + ' из ' + e.sts.length,
         e.submitted ? e.score : '', e.submitted ? (e.mark || 'н/з') + (e.status === 'check' ? '?' : '') : 'в работе',
         statusText[e.status], Math.round(e.active / 60000) + (e.activeIsTotal ? ' (всего)' : ''), statusNote(e)
       ].join('\t')));
