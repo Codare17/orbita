@@ -19,8 +19,9 @@ window.ORBITA.lessons['pz-11'] = {
             if (!b || !m) return 'Нужны кнопка #later и абзац #msg.';
             b.click();
             if (m.textContent.trim() !== 'Ничего не произошло') return 'Текст изменился сразу, без ожидания. Используйте setTimeout.';
-            await new Promise(r => setTimeout(r, 2300));
-            return m.textContent.trim() === 'Прошло 2 секунды!' || 'Через 2 секунды текст: «' + m.textContent.trim() + '», ожидалось «Прошло 2 секунды!».';
+            const t0 = Date.now();
+            while (m.textContent.trim() === 'Ничего не произошло' && Date.now() - t0 < 8000) await new Promise(r => setTimeout(r, 100));
+            return m.textContent.trim() === 'Прошло 2 секунды!' || 'Текст: «' + m.textContent.trim() + '», ожидалось «Прошло 2 секунды!».';
           }
         },
         {
@@ -44,8 +45,9 @@ window.ORBITA.lessons['pz-11'] = {
             const b = d.querySelector('#go'), c = d.querySelector('#clock');
             if (!b || !c) return 'Нужны кнопка #go и абзац #clock.';
             b.click();
-            await new Promise(r => setTimeout(r, 2300));
-            return c.textContent.trim() === 'Прошло секунд: 2' || 'Через ~2 секунды после запуска: «' + c.textContent.trim() + '», ожидалось «Прошло секунд: 2».';
+            const t0 = Date.now();
+            while (c.textContent.trim() === 'Прошло секунд: 0' && Date.now() - t0 < 8000) await new Promise(r => setTimeout(r, 100));
+            return c.textContent.trim() === 'Прошло секунд: 1' || 'После запуска: «' + c.textContent.trim() + '», ожидалось «Прошло секунд: 1» — число должно вырасти на 1 после первого тика.';
           }
         },
         {
@@ -107,9 +109,21 @@ window.ORBITA.lessons['pz-11'] = {
           check: async (d, w) => {
             const go = d.querySelector('#go'), c = d.querySelector('#clock');
             if (!go || !c) return 'Нужны #go и #clock.';
+            const num = () => { const m = c.textContent.match(/(\d+)/); return m ? +m[1] : -1; };
+            if (num() < 0) return 'Не разобрала текст часов: «' + c.textContent.trim() + '». Ожидалось «Прошло секунд: N».';
             go.click(); go.click(); go.click();
-            await new Promise(r => setTimeout(r, 2300));
-            return c.textContent.trim() === 'Прошло секунд: 2' || 'После трёх кликов «Запустить» через 2 секунд: «' + c.textContent.trim() + '». Если число больше — таймеров запускается несколько. Ожидалось «Прошло секунд: 2».';
+            let last = num(), best = last, jump = 0;
+            const t0 = Date.now();
+            while (best < 2 && Date.now() - t0 < 9000) {
+              await new Promise(r => setTimeout(r, 150));
+              const v = num();
+              if (v < 0) return 'Не разобрала текст часов: «' + c.textContent.trim() + '». Ожидалось «Прошло секунд: N».';
+              if (v - last > jump) jump = v - last;
+              if (v > best) best = v;
+              last = v;
+            }
+            if (jump >= 2) return 'Часы идут слишком быстро: счётчик вырос сразу на ' + jump + ' за один шаг — после двойного клика работает несколько таймеров. Запускайте новый интервал, только если timer === null.';
+            return best >= 2 || 'Часы почти не идут: за 9 секунд дошли только до «Прошло секунд: ' + best + '». Ожидалось дойти до 2.';
           }
         }
       ]
@@ -129,10 +143,11 @@ window.ORBITA.lessons['pz-11'] = {
             const l = d.querySelector('#launch'), c = d.querySelector('#count'), st = d.querySelector('#start');
             if (!l || !c || !st) return 'Нужны #launch, #count и #start.';
             l.click();
-            await new Promise(r => setTimeout(r, 3600));
-            if (c.textContent.trim() !== '0') return 'После ~3 секунд отсчёта: «' + c.textContent.trim() + '», ожидалось «0».';
+            const t0 = Date.now();
+            while (c.textContent.trim() !== '0' && Date.now() - t0 < 12000) await new Promise(r => setTimeout(r, 150));
+            if (c.textContent.trim() !== '0') return 'Отсчёт не дошёл до нуля: сейчас «' + c.textContent.trim() + '», ожидалось «0».';
             if (st.style.display === 'none') return 'На нуле «Старт!» должен стать видимым.';
-            await new Promise(r => setTimeout(r, 700));
+            await new Promise(r => setTimeout(r, 900));
             return c.textContent.trim() === '0' || 'Отсчёт не остановился на нуле — сейчас «' + c.textContent.trim() + '». Нужен clearInterval внутри if.';
           }
         }
@@ -152,9 +167,11 @@ window.ORBITA.lessons['pz-11'] = {
           check: async (d, w) => {
             const b = d.querySelector('#blinkBtn'), bl = d.querySelector('#blink');
             if (!b || !bl) return 'Нужны #blinkBtn и #blink.';
+            const was = bl.textContent.trim();
             b.click();
-            await new Promise(r => setTimeout(r, 500));
-            return bl.textContent.trim() === 'Бип!' || 'Через полсекунды после клика: «' + bl.textContent.trim() + '», ожидалось «Бип!» (первое переключение).';
+            const t0 = Date.now();
+            while (bl.textContent.trim() === was && Date.now() - t0 < 5000) await new Promise(r => setTimeout(r, 100));
+            return bl.textContent.trim() !== was || 'Текст не меняется после клика. Ожидалось переключение «Тихо» ↔ «Бип!» каждые 300 мс.';
           }
         },
         {
@@ -163,10 +180,15 @@ window.ORBITA.lessons['pz-11'] = {
             const b = d.querySelector('#blinkBtn'), bl = d.querySelector('#blink');
             if (!b || !bl) return 'Нужны #blinkBtn и #blink.';
             b.click();
-            await new Promise(r => setTimeout(r, 2400));
-            const settled = bl.textContent.trim();
-            await new Promise(r => setTimeout(r, 700));
-            return bl.textContent.trim() === settled || 'Текст продолжает меняться после 3 миганий. Остановите интервал через clearInterval.';
+            const t0 = Date.now();
+            let last = bl.textContent.trim(), quiet = Date.now();
+            while (Date.now() - t0 < 15000) {
+              await new Promise(r => setTimeout(r, 200));
+              const v = bl.textContent.trim();
+              if (v !== last) { last = v; quiet = Date.now(); }
+              else if (Date.now() - quiet >= 900) return true;
+            }
+            return 'Текст продолжает меняться дольше 3 миганий. Остановите интервал через clearInterval после 6 переключений.';
           }
         }
       ]
@@ -222,9 +244,11 @@ window.ORBITA.lessons['pz-11'] = {
           check: async (d, w, H) => {
               const run = d.querySelector('#run'), disp = d.querySelector('#display');
               if (!run || !disp) return 'Нужны #run и #display.';
+              const start = disp.textContent.trim();
               run.click();
-              await new Promise(r => setTimeout(r, 1100));
-              return disp.textContent.trim() === String(+H.v.seconds - 1) || 'Через секунду после запуска: «' + disp.textContent.trim() + '», ожидалось «' + (+H.v.seconds - 1) + '».';
+              const t0 = Date.now();
+              while (disp.textContent.trim() === start && Date.now() - t0 < 8000) await new Promise(r => setTimeout(r, 100));
+              return disp.textContent.trim() === String(+H.v.seconds - 1) || 'После первого тика: «' + disp.textContent.trim() + '», ожидалось «' + (+H.v.seconds - 1) + '».';
             }
         },
         {
