@@ -82,9 +82,11 @@
       f.tabIndex = -1;
       f.className = 'test-frame';
 
+      const LIMIT = 15000;   // весь блок проверок: тесты задания ждут таймеры студента, суммарно до 4–5 с
+
       const timer = setTimeout(() => finish(tests.map(() => ({
-        ok: false, msg: 'Страница не ответила за 5 секунд. Возможно, в коде бесконечный цикл.'
-      }))), 5000);
+        ok: false, msg: 'Страница не ответила за ' + LIMIT / 1000 + ' секунд. Возможно, в коде бесконечный цикл или устройство сильно загружено — попробуйте ещё раз.'
+      }))), LIMIT);
 
       function onMsg(e) {
         if (e.source !== f.contentWindow || !e.data || e.data.__orbita !== 'test' || e.data.id !== id) return;
